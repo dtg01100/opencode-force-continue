@@ -4,6 +4,9 @@
   "description": "Forces OpenCode AI to continue when the model stops early, requiring a completion signal to stop",
   "main": "index.js",
   "type": "module",
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run"
@@ -16,5 +19,10 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dtg01100/opencode-force-continue.git"
   }
 }
