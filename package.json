@@ -1,0 +1,17 @@
+{
+  "name": "opencode-force-continue",
+  "version": "1.0.0",
+  "description": "Forces OpenCode AI to continue when the model stops early, requiring a completion signal to stop",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
+  }
+}

@@ -1,0 +1,1 @@
+I want an opencode plugin that can force opencode to continue when the model stops early, and require a completion statement/command to stop.
