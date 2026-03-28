@@ -1,5 +1,5 @@
 {
-  "name": "opencode-force-continue",
+  "name": "@dtg01100/opencode-force-continue",
   "version": "1.0.0",
   "description": "Forces OpenCode AI to continue when the model stops early, requiring a completion signal to stop",
   "main": "index.js",
