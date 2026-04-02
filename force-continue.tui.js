@@ -37,6 +37,13 @@ function setNextSessionEnabled(enabled) {
 
 /** @type {import("@opencode-ai/plugin/tui").TuiPlugin} */
 async function tuiPlugin(api) {
+    // Import @opentui/solid terminal rendering primitives.
+    // Available inside OpenCode (bundled in binary); falls back gracefully in test environments.
+    let createElement, createTextNode, insertNode, setProp;
+    try {
+        ({ createElement, createTextNode, insertNode, setProp } = await import("@opentui/solid"));
+    } catch {}
+
     function getSessionID() {
         const route = api.route.current;
         if (route?.name === "session") {
@@ -50,10 +57,20 @@ async function tuiPlugin(api) {
         api.kv.get("force-continue:version", 0);
 
         const sessionID = getSessionID();
+        let text;
         if (sessionID) {
-            return isEnabled(sessionID) ? "⚡ Force Continue" : null;
+            text = isEnabled(sessionID) ? "⚡ Force Continue" : null;
+        } else {
+            text = isNextSessionEnabled() ? "⚡ Force Continue (next)" : null;
         }
-        return isNextSessionEnabled() ? "⚡ Force Continue (next)" : null;
+
+        if (!text || !createElement) return null;
+
+        // Terminal UI requires text nodes to be wrapped in a <text> element.
+        const el = createElement("text");
+        setProp(el, "fg", api.theme.current.warning);
+        insertNode(el, createTextNode(text));
+        return el;
     }
 
     api.slots.register({
