@@ -35,14 +35,6 @@ function setNextSessionEnabled(enabled) {
     }
 }
 
-function consumeNextSessionFlag() {
-    const enabled = isNextSessionEnabled();
-    if (enabled) {
-        try { unlinkSync(NEXT_SESSION_FLAG); } catch {}
-    }
-    return enabled;
-}
-
 /** @type {import("@opencode-ai/plugin/tui").TuiPlugin} */
 async function tuiPlugin(api) {
     function getSessionID() {
