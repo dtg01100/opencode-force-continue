@@ -85,9 +85,11 @@ async function tuiPlugin(api) {
         const nextEnabled = isNextSessionEnabled();
         return [
             {
-                title: `Force Continue (next session): ${nextEnabled ? "ON" : "OFF"}`,
+                title: `Force Continue: ${nextEnabled ? "ON" : "OFF"}`,
                 value: "force-continue-next",
-                description: "Enable force-continue for the next new session",
+                description: nextEnabled
+                    ? "Force continue is enabled for the next new session"
+                    : "Enable force-continue for the next new session",
                 category: "Plugins",
                 slash: {
                     name: "force-continue",
