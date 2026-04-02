@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { existsSync } from "fs";
+import { existsSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 

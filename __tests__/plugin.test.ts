@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import { tmpdir } from 'os';
 
 vi.mock('@opencode-ai/plugin', async () => {
   const actual = await vi.importActual('@opencode-ai/plugin');
@@ -10,11 +11,18 @@ vi.mock('@opencode-ai/plugin', async () => {
   };
 });
 
+function getFlagPath(sessionID: string): string {
+  return join(tmpdir(), `opencode-force-continue-${sessionID}`);
+}
+
+function getNextSessionFlagPath(): string {
+  return join(tmpdir(), 'opencode-force-continue-next');
+}
+
 describe('ContinuePlugin', () => {
   let sessionCompletionState: Map<string, boolean>;
   let mockClient: any;
   let mockCtx: any;
-  let testDir: string;
 
   beforeEach(() => {
     sessionCompletionState = new Map();
@@ -24,91 +32,117 @@ describe('ContinuePlugin', () => {
         promptAsync: vi.fn(),
       },
     };
-    testDir = '/tmp/test-force-continue-' + Date.now();
-    mkdirSync(testDir, { recursive: true });
-    mkdirSync(join(testDir, '.opencode'), { recursive: true });
-    mockCtx = { client: mockClient, directory: testDir };
+    mockCtx = { client: mockClient };
+
+    // Clean up any leftover flag files
+    const files = ['opencode-force-continue-next'];
+    for (const f of files) {
+      const p = join(tmpdir(), f);
+      if (existsSync(p)) unlinkSync(p);
+    }
+  });
+
+  afterEach(() => {
+    // Clean up flag files after each test
+    try {
+      const nextFlag = getNextSessionFlagPath();
+      if (existsSync(nextFlag)) unlinkSync(nextFlag);
+    } catch {}
   });
 
   it('should do nothing when disabled (no state file)', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     await plugin['chat.message']({ sessionID: 'test-session-1' });
-    
+
     expect(sessionCompletionState.has('test-session-1')).toBe(false);
   });
 
   it('should track session as incomplete on chat.message when enabled', async () => {
-    writeFileSync(join(testDir, '.opencode', 'force-continue-state.json'), JSON.stringify({ enabled: true }));
-    
+    const flagPath = getFlagPath('test-session-2');
+    writeFileSync(flagPath, '');
+
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     await plugin['chat.message']({ sessionID: 'test-session-2' });
-    
+
     expect(sessionCompletionState.get('test-session-2')).toBe(false);
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
   });
 
   it('should mark session complete when completionSignal tool is used', async () => {
-    writeFileSync(join(testDir, '.opencode', 'force-continue-state.json'), JSON.stringify({ enabled: true }));
-    
+    const flagPath = getFlagPath('test-session-3');
+    writeFileSync(flagPath, '');
+
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     await plugin['chat.message']({ sessionID: 'test-session-3' });
     expect(sessionCompletionState.get('test-session-3')).toBe(false);
-    
+
     await plugin.event({
       event: {
         type: 'message.part.updated',
         properties: {
+          sessionID: 'test-session-3',
           part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-3' }
         }
       }
     });
-    
+
     expect(sessionCompletionState.get('test-session-3')).toBe(true);
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
   });
 
   it('should send Continue prompt when session becomes idle without completion', async () => {
-    writeFileSync(join(testDir, '.opencode', 'force-continue-state.json'), JSON.stringify({ enabled: true }));
-    
+    const flagPath = getFlagPath('test-session-4');
+    writeFileSync(flagPath, '');
+
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     await plugin['chat.message']({ sessionID: 'test-session-4' });
-    
+
     mockClient.session.messages.mockResolvedValue({
       data: [{ role: 'assistant', content: [{ type: 'text', text: 'Hello' }] }]
     });
-    
+
     await plugin.event({
       event: {
         type: 'session.idle',
         properties: { sessionID: 'test-session-4' }
       }
     });
-    
+
     expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
       path: { sessionID: 'test-session-4' },
       body: { parts: [{ type: 'text', text: 'Continue' }] }
     });
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
   });
 
   it('should not send Continue prompt when session is marked complete', async () => {
-    writeFileSync(join(testDir, '.opencode', 'force-continue-state.json'), JSON.stringify({ enabled: true }));
-    
+    const flagPath = getFlagPath('test-session-5');
+    writeFileSync(flagPath, '');
+
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     await plugin['chat.message']({ sessionID: 'test-session-5' });
-    
+
     await plugin.event({
       event: {
         type: 'message.part.updated',
@@ -117,34 +151,71 @@ describe('ContinuePlugin', () => {
         }
       }
     });
-    
+
     await plugin.event({
       event: {
         type: 'session.idle',
         properties: { sessionID: 'test-session-5' }
       }
     });
-    
+
     expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
   });
 
   it('should not send Continue prompt when disabled even if session is idle', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin(sessionCompletionState);
     const plugin = await createPlugin(mockCtx);
-    
+
     mockClient.session.messages.mockResolvedValue({
       data: [{ role: 'assistant', content: [{ type: 'text', text: 'Hello' }] }]
     });
-    
+
     await plugin.event({
       event: {
         type: 'session.idle',
         properties: { sessionID: 'test-session-6' }
       }
     });
-    
+
     expect(mockClient.session.messages).not.toHaveBeenCalled();
     expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('should enable force-continue for next session when next-session flag exists', async () => {
+    const nextFlag = getNextSessionFlagPath();
+    writeFileSync(nextFlag, '');
+
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin(sessionCompletionState);
+    const plugin = await createPlugin(mockCtx);
+
+    await plugin.event({
+      event: {
+        type: 'session.created',
+        properties: { sessionID: 'new-session-1' }
+      }
+    });
+
+    // After consuming the next-session flag, a session flag should be created
+    const flagPath = getFlagPath('new-session-1');
+    expect(existsSync(flagPath)).toBe(true);
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
+    if (existsSync(nextFlag)) unlinkSync(nextFlag);
+  });
+});
+
+describe('TUI Plugin', () => {
+  it('should register force-continue command', async () => {
+    const tuiModule = await import('../force-continue.tui.js');
+    expect(tuiModule.default).toBeDefined();
+    expect(tuiModule.default.id).toBe('force-continue');
+    expect(tuiModule.default.tui).toBeDefined();
+    expect(typeof tuiModule.default.tui).toBe('function');
   });
 });

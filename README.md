@@ -34,13 +34,6 @@ mkdir -p .opencode/plugins
 cp force-continue.server.js force-continue.tui.js .opencode/plugins/
 ```
 
-### Project-level (current project only)
-
-```bash
-mkdir -p .opencode/plugins
-cp force-continue.server.js force-continue.tui.js .opencode/plugins/
-```
-
 OpenCode automatically loads any `.js` or `.ts` files from these directories at startup.
 
 ## Usage
@@ -62,6 +55,13 @@ When enabled, OpenCode will inject a system message requiring the AI to call `co
 If the AI stops without calling it (session becomes idle), the plugin automatically prompts "Continue" to keep the agent running.
 
 Run `/force-continue` again to toggle it off.
+
+## How It Works
+
+1. **Enable**: Toggle with `/force-continue` or `/fc`
+2. **System Injection**: When enabled, a system message is added requiring the AI to call `completionSignal` before stopping
+3. **Auto-Continue**: If the session becomes idle without the completion signal, the plugin sends a "Continue" prompt
+4. **Completion**: Once the AI calls `completionSignal`, the plugin stops auto-continuing
 
 ## Requirements
 
