@@ -1,4 +1,34 @@
 import { tool } from "@opencode-ai/plugin";
+import { existsSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+const NEXT_SESSION_FLAG = join(tmpdir(), "opencode-force-continue-next");
+
+function getFlagPath(sessionID) {
+    return join(tmpdir(), `opencode-force-continue-${sessionID}`);
+}
+
+function isEnabled(sessionID) {
+    if (!sessionID) return false;
+    return existsSync(getFlagPath(sessionID));
+}
+
+function setEnabled(sessionID, enabled) {
+    if (!sessionID) return;
+    const flagPath = getFlagPath(sessionID);
+    if (enabled) {
+        writeFileSync(flagPath, "");
+    } else {
+        try { unlinkSync(flagPath); } catch {}
+    }
+}
+
+function consumeNextSessionFlag() {
+    if (!existsSync(NEXT_SESSION_FLAG)) return false;
+    try { unlinkSync(NEXT_SESSION_FLAG); } catch {}
+    return true;
+}
 
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     return async (ctx) => {
@@ -14,17 +44,31 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     },
                 }),
             },
+            "chat.message": async ({ sessionID }) => {
+                if (!isEnabled(sessionID)) return;
+                sessionCompletionState.set(sessionID, false);
+            },
             "experimental.chat.system.transform": async ({ sessionID }, { system }) => {
+                if (!isEnabled(sessionID)) return;
                 system.push(
                     "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
                     "Do not stop or ask for user input until you have called this tool. " +
                     "If you stop without calling it, you will be forced to continue."
                 );
             },
-            "chat.message": async ({ sessionID }) => {
-                sessionCompletionState.set(sessionID, false);
-            },
             event: async ({ event }) => {
+                const { sessionID } = event.properties;
+                if (!sessionID) return;
+
+                if (event.type === "session.created") {
+                    if (consumeNextSessionFlag()) {
+                        setEnabled(sessionID, true);
+                    }
+                    return;
+                }
+
+                if (!isEnabled(sessionID)) return;
+
                 if (event.type === "message.part.updated") {
                     const { part } = event.properties;
                     if (part.type === "tool" && part.tool === "completionSignal") {
@@ -33,7 +77,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 }
 
                 if (event.type === "session.idle") {
-                    const { sessionID } = event.properties;
                     const isComplete = sessionCompletionState.get(sessionID);
 
                     if (!isComplete) {
@@ -59,3 +102,4 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 };
 
 export const ContinuePlugin = createContinuePlugin();
+export default { server: ContinuePlugin };
