@@ -94,7 +94,8 @@ async function tuiPlugin(api) {
                     aliases: ["fc"],
                 },
                 onSelect() {
-                    const newState = !nextEnabled;
+                    const currentState = isNextSessionEnabled();
+                    const newState = !currentState;
                     setNextSessionEnabled(newState);
                     api.ui.toast({
                         title: "Force Continue",
