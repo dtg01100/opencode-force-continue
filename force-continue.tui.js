@@ -64,11 +64,13 @@ async function tuiPlugin(api) {
                         const currentState = isEnabled(sessionID);
                         const newState = !currentState;
                         setEnabled(sessionID, newState);
-                        api.ui.toast({
-                            title: "Force Continue",
-                            message: `Force continue is now ${newState ? "ON" : "OFF"} for this session`,
-                            variant: newState ? "success" : "info",
-                        });
+                    api.ui.toast({
+                        title: "Force Continue",
+                        message: newState
+                            ? "Force continue enabled for the next session"
+                            : "Force continue disabled for the next session",
+                        variant: newState ? "success" : "info",
+                    });
                     },
                 },
             ];
@@ -93,7 +95,9 @@ async function tuiPlugin(api) {
                     setNextSessionEnabled(newState);
                     api.ui.toast({
                         title: "Force Continue",
-                        message: `Force continue will be ${newState ? "ON" : "OFF"} for the next session`,
+                        message: newState
+                            ? "Force continue enabled for the next session"
+                            : "Force continue disabled for the next session",
                         variant: newState ? "success" : "info",
                     });
                 },
