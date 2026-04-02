@@ -16,6 +16,26 @@ Add to your `opencode.json`:
 }
 ```
 
+## Alternative: Manual Installation
+
+Drop the plugin file directly into OpenCode's plugin directory (no npm install needed).
+
+### Global (all projects)
+
+```bash
+mkdir -p ~/.config/opencode/plugins
+cp index.js ~/.config/opencode/plugins/force-continue.js
+```
+
+### Project-level (current project only)
+
+```bash
+mkdir -p .opencode/plugins
+cp index.js .opencode/plugins/force-continue.js
+```
+
+OpenCode automatically loads any `.js` or `.ts` files from these directories at startup.
+
 ## Usage
 
 When this plugin is active, OpenCode will inject a system message requiring the AI to call `completionSignal` when finished with a task.
