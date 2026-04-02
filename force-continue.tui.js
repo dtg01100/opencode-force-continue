@@ -39,21 +39,26 @@ function setNextSessionEnabled(enabled) {
 async function tuiPlugin(api) {
     function getSessionID() {
         const route = api.route.current;
-        if (route.name === "session") {
-            return route.params.sessionID;
+        if (route?.name === "session") {
+            return route.params?.sessionID ?? null;
         }
         return null;
     }
 
+    function renderStatus() {
+        // Read KV version to opt into reactive re-renders when state is toggled
+        api.kv.get("force-continue:version", 0);
+
+        const sessionID = getSessionID();
+        if (sessionID) {
+            return isEnabled(sessionID) ? "⚡ Force Continue" : null;
+        }
+        return isNextSessionEnabled() ? "⚡ Force Continue (next)" : null;
+    }
+
     api.slots.register({
-        id: "force-continue-status",
-        slot: "sidebar_footer",
-        render() {
-            const sessionID = getSessionID();
-            if (sessionID) {
-                return isEnabled(sessionID) ? "⚡ Force Continue" : null;
-            }
-            return isNextSessionEnabled() ? "⚡ Force Continue (next)" : null;
+        slots: {
+            sidebar_footer: renderStatus,
         },
     });
 
@@ -76,6 +81,7 @@ async function tuiPlugin(api) {
                         const currentState = isEnabled(sessionID);
                         const newState = !currentState;
                         setEnabled(sessionID, newState);
+                        api.kv.set("force-continue:version", (api.kv.get("force-continue:version", 0) || 0) + 1);
                         api.ui.toast({
                             title: "Force Continue",
                             message: newState
@@ -105,6 +111,7 @@ async function tuiPlugin(api) {
                     const currentState = isNextSessionEnabled();
                     const newState = !currentState;
                     setNextSessionEnabled(newState);
+                    api.kv.set("force-continue:version", (api.kv.get("force-continue:version", 0) || 0) + 1);
                     api.ui.toast({
                         title: "Force Continue",
                         message: newState
