@@ -57,18 +57,6 @@ async function tuiPlugin(api) {
         },
     });
 
-    api.slots.register({
-        id: "force-continue-status",
-        slot: "sidebar_footer",
-        render() {
-            const sessionID = getSessionID();
-            if (sessionID) {
-                return isEnabled(sessionID) ? "⚡ Force Continue" : null;
-            }
-            return isNextSessionEnabled() ? "⚡ Force Continue (next)" : null;
-        },
-    });
-
     api.command.register(() => {
         const sessionID = getSessionID();
 
