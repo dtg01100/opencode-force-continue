@@ -4,16 +4,36 @@ Forces OpenCode AI to continue when the model stops early. The AI must call `com
 
 ## Installation
 
+### Quick install (global)
+
+```bash
+./install.sh
+```
+
+### Quick install (project-level)
+
+```bash
+./install.sh --project
+```
+
+### Uninstall
+
+```bash
+./uninstall.sh
+```
+
+### Manual install
+
 Copy the plugin files into OpenCode's plugin directory.
 
-### Global (all projects)
+**Global** (all projects):
 
 ```bash
 mkdir -p ~/.config/opencode/plugins
 cp force-continue.server.js force-continue.tui.js flags.js ~/.config/opencode/plugins/
 ```
 
-### Project-level (current project only)
+**Project-level** (current project only):
 
 ```bash
 mkdir -p .opencode/plugins
