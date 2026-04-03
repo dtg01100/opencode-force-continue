@@ -248,9 +248,31 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
               if (messages && messages.length > 0) {
                 const lastMsg = messages[messages.length - 1];
                 if (lastMsg.role === 'assistant') {
-                  // Detect whether assistant asked a question; if so, auto-respond with a safe default to avoid stalling
+                  // Extract last text (support parts and legacy text)
                   const lastText = (lastMsg.parts || []).map(p => p.text || p.thinking || p.reasoning || '').join(' ').trim() || (typeof lastMsg.text === 'string' ? lastMsg.text : '');
+
+                  // Heuristic: looks like a question
                   const looksLikeQuestion = /\?\s*$/.test(lastText) || /\b(should|could|would|do|did|why|how|what|when|where|who)\b/i.test(lastText);
+
+                  // Explicit signal: structured metadata or explicit tag in text
+                  const explicitRequiresHuman = (lastMsg.metadata && lastMsg.metadata.requiresHuman) === true || /\[requires-?human\]/i.test(lastText) || /requires human input|need(?:s)? your input|please confirm|please review|awaiting(?: me| human)/i.test(lastText);
+
+                  // Sensitive topics that should trigger human review
+                  const sensitiveKeyword = /\b(legal|law|lawsuit|safety|danger|exploit|password|credential|secret|approval|authorize|deploy|production|pci|hipaa)\b/i.test(lastText);
+
+                  if (explicitRequiresHuman || sensitiveKeyword) {
+                    // Prefer to pause auto-continue for explicit signals or sensitive topics
+                    try {
+                      const pauseMsg = explicitRequiresHuman
+                        ? 'Assistant requested human input — pausing auto-continue.'
+                        : 'Potentially sensitive question detected — pausing auto-continue for human review.';
+                      await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: pauseMsg }] });
+                    } catch (e) {
+                      console.error('Failed to send pause notification:', e);
+                    }
+                    // Do not auto-respond; allow host or a human to handle
+                    return;
+                  }
 
                   if (looksLikeQuestion) {
                     // Auto-respond with a safe default: instruct assistant to continue and not wait for user
@@ -260,10 +282,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     } catch (e) {
                       console.error('Failed to auto-respond to assistant question:', e);
                       // fallback to generic Continue prompt
-                      await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] });
+                      try { await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] }); } catch (e2) { console.error(e2); }
                     }
                   } else {
-                    await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] });
+                    try { await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] }); } catch (e) { console.error(e); }
                   }
                 }
               }
