@@ -73,43 +73,55 @@ function updateLastSeen(sessionID) {
 
 function setSessionCompleted(sessionID, completed = true) {
   if (!sessionID) return;
-  const state = readState();
-  const meta = state.sessions[sessionID] || {};
-  meta.completed = !!completed;
-  if (meta.completed) {
-    meta.completedAt = Date.now();
-    // Automatically clear paused state on completion
-    if (meta.paused) {
-      delete meta.paused;
-      delete meta.pauseReason;
-      delete meta.pauseAt;
-    }
+  // Keep completion state in-memory only
+  if (completed) {
+    inMemoryCompletion.set(sessionID, { completedAt: Date.now() });
+    // clear any paused in-memory state
+    if (inMemoryPaused.has(sessionID)) inMemoryPaused.delete(sessionID);
+  } else {
+    inMemoryCompletion.delete(sessionID);
   }
-  state.sessions[sessionID] = Object.assign({}, meta);
-  writeState(state);
 }
 
 function setSessionPaused(sessionID, paused = true, reason) {
   if (!sessionID) return;
-  const state = readState();
-  const meta = state.sessions[sessionID] || {};
-  meta.paused = !!paused;
-  if (meta.paused) meta.pauseAt = Date.now(); else {
-    delete meta.pauseAt;
-    delete meta.pauseReason;
+  if (paused) {
+    inMemoryPaused.set(sessionID, { pauseAt: Date.now(), pauseReason: reason || null });
+  } else {
+    inMemoryPaused.delete(sessionID);
   }
-  if (reason) meta.pauseReason = reason;
-  state.sessions[sessionID] = Object.assign({}, meta);
-  writeState(state);
 }
 
 function getSessionMeta(sessionID) {
   if (!sessionID) return null;
   const state = readState();
-  const meta = state.sessions[sessionID];
-  if (!meta) return null;
-  if (meta === true) return { enabled: true, lastSeen: 0 };
-  return { enabled: !!meta.enabled, lastSeen: meta.lastSeen || 0, completed: !!meta.completed, completedAt: meta.completedAt || null, paused: !!meta.paused, pauseReason: meta.pauseReason, pauseAt: meta.pauseAt || null };
+  const meta = state.sessions[sessionID] || {};
+  if (meta === true) return { enabled: true, lastSeen: 0, completed: !!inMemoryCompletion.has(sessionID), paused: !!inMemoryPaused.has(sessionID) };
+  return {
+    enabled: !!meta.enabled,
+    lastSeen: meta.lastSeen || 0,
+    completed: !!inMemoryCompletion.has(sessionID),
+    completedAt: inMemoryCompletion.get(sessionID)?.completedAt || null,
+    paused: !!inMemoryPaused.has(sessionID),
+    pauseReason: inMemoryPaused.get(sessionID)?.pauseReason || null,
+    pauseAt: inMemoryPaused.get(sessionID)?.pauseAt || null,
+  };
+}
+
+// List paused sessions (in-memory)
+export function listPausedSessions() {
+  const out = [];
+  for (const [sessionID, info] of inMemoryPaused.entries()) {
+    out.push({ sessionID, pauseReason: info.pauseReason || null, pauseAt: info.pauseAt || null });
+  }
+  return out;
+}
+
+// Clear paused session (in-memory)
+export function clearPausedSession(sessionID) {
+  if (!sessionID) return false;
+  if (inMemoryPaused.has(sessionID)) { inMemoryPaused.delete(sessionID); return true; }
+  return false;
 }
 
 function cleanupOrphanSessions(thresholdMs = 5 * 60 * 1000) {
@@ -139,6 +151,9 @@ function cleanupOrphanSessions(thresholdMs = 5 * 60 * 1000) {
 }
 
 migrateLegacyFlags();
+
+const inMemoryCompletion = new Map();
+const inMemoryPaused = new Map();
 
 // Task-driven babysitter factory
 const DEFAULT_TIMEOUT_MS = 120000; // 2 minutes
@@ -193,16 +208,6 @@ export function createTaskBabysitter({ client, getTasksByParentSession, director
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
   return async (ctx) => {
     const { client } = ctx;
-
-    // Seed in-memory completion state from persisted state for resilience across restarts
-    try {
-      const persisted = readState();
-      for (const [sid, meta] of Object.entries(persisted.sessions || {})) {
-        if (meta && meta.completed) sessionCompletionState.set(sid, true);
-      }
-    } catch (e) {
-      try { console.error('Failed to seed completion state from disk:', e); } catch (e2) {}
-    }
 
     // Run a cleanup pass on init and schedule periodic cleanup to auto-clear stale paused sessions
     try {
