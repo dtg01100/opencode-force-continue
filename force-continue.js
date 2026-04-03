@@ -248,7 +248,23 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
               if (messages && messages.length > 0) {
                 const lastMsg = messages[messages.length - 1];
                 if (lastMsg.role === 'assistant') {
-                  await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] });
+                  // Detect whether assistant asked a question; if so, auto-respond with a safe default to avoid stalling
+                  const lastText = (lastMsg.parts || []).map(p => p.text || p.thinking || p.reasoning || '').join(' ').trim() || (typeof lastMsg.text === 'string' ? lastMsg.text : '');
+                  const looksLikeQuestion = /\?\s*$/.test(lastText) || /\b(should|could|would|do|did|why|how|what|when|where|who)\b/i.test(lastText);
+
+                  if (looksLikeQuestion) {
+                    // Auto-respond with a safe default: instruct assistant to continue and not wait for user
+                    const autoResp = "(Auto-response) Please continue without waiting for user input.";
+                    try {
+                      await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: autoResp }] });
+                    } catch (e) {
+                      console.error('Failed to auto-respond to assistant question:', e);
+                      // fallback to generic Continue prompt
+                      await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] });
+                    }
+                  } else {
+                    await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: 'Continue' }] });
+                  }
                 }
               }
             } catch (e) { console.error('Plugin error:', e); }
