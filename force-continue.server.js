@@ -2,20 +2,10 @@ import { tool } from "@opencode-ai/plugin";
 
 const sessionState = new Map();
 let nextSessionEnabled = false;
-let currentVersion = 0;
 
 function isEnabled(sessionID) {
     if (!sessionID || typeof sessionID !== "string") return false;
-    return sessionState.has(sessionID) && sessionState.get(sessionID).enabled === true;
-}
-
-function setEnabled(sessionID, enabled = true) {
-    if (!sessionID || typeof sessionID !== "string") return;
-    if (enabled) {
-        sessionState.set(sessionID, { enabled: true, lastSeen: Date.now() });
-    } else {
-        sessionState.delete(sessionID);
-    }
+    return true;
 }
 
 function isNextSessionEnabled() {
@@ -32,37 +22,12 @@ function consumeNextSessionFlag() {
     return true;
 }
 
-function cleanupOrphanSessions(activeSessionSet = new Set()) {
-    if (!(activeSessionSet instanceof Set)) return;
-    for (const sessionID of sessionState.keys()) {
-        if (!activeSessionSet.has(sessionID)) {
-            sessionState.delete(sessionID);
-        }
-    }
-}
-
 function updateLastSeen(sessionID) {
     if (!sessionID || typeof sessionID !== "string") return;
     const meta = sessionState.get(sessionID) || {};
     meta.enabled = true;
     meta.lastSeen = Date.now();
     sessionState.set(sessionID, meta);
-}
-
-function getSessionMeta(sessionID) {
-    if (!sessionID || typeof sessionID !== "string") return null;
-    const meta = sessionState.get(sessionID);
-    if (!meta) return { enabled: false, lastSeen: null };
-    return {
-        enabled: !!meta.enabled,
-        lastSeen: typeof meta.lastSeen === "number" ? meta.lastSeen : null,
-    };
-}
-
-function isTaskDone(status) {
-    if (typeof status !== "string") return false;
-    const normalized = status.trim().toLowerCase();
-    return normalized === "done" || normalized === "completed" || normalized === "complete";
 }
 
 function readState() {
@@ -73,194 +38,222 @@ function readState() {
     return {
         sessions,
         nextSession: nextSessionEnabled,
-        version: currentVersion,
     };
 }
 
-function getVersion() {
-    return currentVersion;
-}
-
-function incrementVersion() {
-    currentVersion += 1;
+function isTaskDone(status) {
+    if (typeof status !== "string") return false;
+    const normalized = status.trim().toLowerCase();
+    return normalized === "done" || normalized === "completed" || normalized === "complete";
 }
 
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     return async (ctx) => {
         const { client } = ctx;
+        const logger = ctx?.logger ?? client?.logger ?? console;
 
-        return {
-            tool: {
-                completionSignal: tool({
-                    description: "Call this tool when you are genuinely finished with the task and ready for user input. Do NOT stop until you have called this.",
-                    args: {},
-                    execute: async () => {
-                        return "Ready for user.";
-                    },
-                }),
-            },
-            "chat.message": async ({ sessionID }) => {
-                if (!isEnabled(sessionID)) return;
-                try { updateLastSeen(sessionID); } catch (e) { /* best-effort */ }
-                sessionCompletionState.set(sessionID, false);
-            },
+        const validateFn = async ({ mode = 'dry', sessionID, promptText } = {}) => {
+            const result = { ok: true, checks: [] };
+            try {
+                const hasClient = !!client;
+                const hasSession = !!(client && client.session);
+                const hasMessages = hasSession && typeof client.session.messages === 'function';
+                const hasPrompt = hasSession && typeof client.session.promptAsync === 'function';
+                const hooksPresent = !!ctx?.hooks;
 
+                result.checks.push({ name: 'client', ok: hasClient });
+                result.checks.push({ name: 'client.session', ok: hasSession });
+                result.checks.push({ name: 'client.session.messages', ok: hasMessages });
+                result.checks.push({ name: 'client.session.promptAsync', ok: hasPrompt });
+                result.checks.push({ name: 'ctx.hooks', ok: hooksPresent });
 
-            "experimental.chat.system.transform": async ({ sessionID } = {}, { system }) => {
-                if (!sessionID) return;
+                if (!hasClient) result.ok = false;
 
-                system.push(
-                    "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
-                    "Do not stop or ask for user input until you have called this tool. " +
-                    "If you stop without calling it, you will be forced to continue."
-                );
-            },
-
-
-
-            event: async ({ event }) => {
-                let sessionID = event.properties?.sessionID;
-                if (event.type === "session.created") {
-                    sessionID = event.properties?.info?.id;
-                }
-                const part = event.properties?.part;
-                if (!sessionID && part?.sessionID) {
-                    sessionID = part.sessionID;
-                }
-                if (!sessionID) return;
-
-                if (event.type === "session.created") {
-                    if (consumeNextSessionFlag()) {
-                        setEnabled(sessionID, true);
+                if (mode === 'probe') {
+                    if (!sessionID) {
+                        result.ok = false;
+                        result.probe = { ok: false, error: 'sessionID required for probe mode' };
+                    } else if (!hasPrompt) {
+                        result.ok = false;
+                        result.probe = { ok: false, error: 'promptAsync not available on client.session' };
+                    } else {
+                        try {
+                            await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: promptText || 'Plugin validation probe' }] });
+                            result.probe = { ok: true };
+                        } catch (e) {
+                            result.ok = false;
+                            result.probe = { ok: false, error: String(e), stack: e?.stack };
+                        }
                     }
-                    if (isEnabled(sessionID)) {
-                        try { updateLastSeen(sessionID); } catch (e) {}
-                        sessionCompletionState.set(sessionID, false);
+                }
+            } catch (e) {
+                result.ok = false;
+                result.error = String(e);
+            }
+            (logger && typeof logger.info === 'function' ? logger.info : console.log)('validate result', result);
+            return result;
+        };
+
+        const returnObj = {};
+
+        returnObj.tool = {
+            completionSignal: tool({
+                description: "Call this tool when you are genuinely finished with the task and ready for user input. Do NOT stop until you have called this.",
+                args: {},
+                execute: async () => {
+                    return "Ready for user.";
+                },
+            }),
+            validate: tool({
+                description: "Validate plugin wiring. mode='dry' for capability checks, mode='probe' to optionally send a test prompt to a sessionID.",
+                args: { mode: { type: 'string', optional: true }, sessionID: { type: 'string', optional: true }, promptText: { type: 'string', optional: true } },
+                execute: validateFn,
+            }),
+        };
+
+        returnObj.validate = validateFn;
+
+        returnObj["chat.message"] = async ({ sessionID }) => {
+            if (!isEnabled(sessionID)) return;
+            try { updateLastSeen(sessionID); } catch (e) { /* best-effort */ }
+            sessionCompletionState.set(sessionID, false);
+        };
+
+        returnObj["experimental.chat.system.transform"] = async (params = {}, ctx2 = {}) => {
+            const { sessionID } = params || {};
+            const system = ctx2 && ctx2.system;
+            if (!sessionID || !system || typeof system.push !== "function") return;
+
+            system.push(
+                "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
+                "Do not stop or ask for user input until you have called this tool. " +
+                "If you stop without calling it, you will be forced to continue."
+            );
+        };
+
+        returnObj.event = async ({ event }) => {
+            let sessionID = event.properties?.sessionID;
+            if (event.type === "session.created") {
+                sessionID = event.properties?.info?.id;
+            }
+            const part = event.properties?.part;
+            if (!sessionID && part?.sessionID) {
+                sessionID = part.sessionID;
+            }
+            if (!sessionID) return;
+
+            if (event.type === "session.created") {
+                try { updateLastSeen(sessionID); } catch (e) {}
+                sessionCompletionState.set(sessionID, false);
+                return;
+            }
+
+            if (!isEnabled(sessionID)) return;
+
+            if (event.type === "message.part.updated") {
+                if (part?.type === "tool" && part.tool === "completionSignal" && part.state?.status === "completed") {
+                    sessionCompletionState.set(sessionID, true);
+                }
+            }
+
+            if (event.type === "session.idle") {
+                const isComplete = sessionCompletionState.get(sessionID);
+
+                if (ctx?.hooks?.taskBabysitter?.event) {
+                    try {
+                        await ctx.hooks.taskBabysitter.event({ event });
+                    } catch (e) {
+                        (logger && typeof logger.error === "function"
+                            ? logger.error
+                            : console.error)("Babysitter hook error:", e?.stack ?? e);
                     }
                     return;
                 }
 
-                if (!isEnabled(sessionID)) return;
+                let unfinishedCount = 0;
+                try {
+                    const getTasksCandidates = [
+                        ctx?.hooks?.getTasksByParentSession,
+                        ctx?.hooks?.backgroundManager?.getTasksByParentSession,
+                        ctx?.getTasksByParentSession,
+                        ctx?.backgroundManager?.getTasksByParentSession,
+                    ];
 
-                if (event.type === "message.part.updated") {
-                    if (part?.type === "tool" && part.tool === "completionSignal" && part.state?.status === "completed") {
-                        sessionCompletionState.set(sessionID, true);
+                    for (const fn of getTasksCandidates) {
+                        if (typeof fn !== "function") continue;
+                        try {
+                            const tasks = await fn(sessionID);
+                            if (Array.isArray(tasks)) {
+                                unfinishedCount = tasks.filter(t => t && t.status && !isTaskDone(t.status)).length;
+                                break;
+                            }
+                            if (tasks && Array.isArray(tasks.data)) {
+                                unfinishedCount = tasks.data.filter(t => t && t.status && !isTaskDone(t.status)).length;
+                                break;
+                            }
+                        } catch {}
                     }
+                } catch (e) {
+                    (logger && typeof logger.error === "function"
+                        ? logger.error
+                        : console.error)("Failed to query tasks:", e?.stack ?? e);
                 }
 
-                if (event.type === "session.idle") {
-                    const isComplete = sessionCompletionState.get(sessionID);
-
-                    // If an external babysitter hook exists on ctx, prefer it. This keeps the plugin lightweight and
-                    // compatible with environments that provide background task managers (like oh-my-opencode).
-                    if (ctx?.hooks?.taskBabysitter?.event) {
-                        try {
-                            await ctx.hooks.taskBabysitter.event({ event });
-                        } catch (e) {
-                            console.error("Babysitter hook error:", e);
-                        }
-                        return;
-                    }
-
-                    // Attempt to detect unfinished tasks via host-provided helpers. If any unfinished tasks remain,
-                    // inject a Continue prompt that reminds the assistant there are unfinished items — even if the
-                    // completionSignal tool was already emitted.
-                    let unfinishedCount = 0;
+                if (unfinishedCount > 0) {
                     try {
-                        const getTasksCandidates = [
-                            ctx?.hooks?.getTasksByParentSession,
-                            ctx?.hooks?.backgroundManager?.getTasksByParentSession,
-                            ctx?.getTasksByParentSession,
-                            ctx?.backgroundManager?.getTasksByParentSession,
-                        ];
+                        const msg = `Continue — ${unfinishedCount} unfinished task(s) remain. Continue working?`;
+                        await client.session.promptAsync({
+                            sessionID,
+                            parts: [{ type: "text", text: msg }]
+                        });
+                    } catch (e) {
+                        (logger && typeof logger.error === "function"
+                            ? logger.error
+                            : console.error)("Plugin error:", e?.stack ?? e);
+                    }
+                    return;
+                }
 
-                        for (const fn of getTasksCandidates) {
-                            if (typeof fn !== "function") continue;
-                            try {
-                                const tasks = await fn(sessionID);
-                                if (Array.isArray(tasks)) {
-                                    unfinishedCount = tasks.filter(t => t && t.status && !isTaskDone(t.status)).length;
-                                    break;
-                                }
-                                // some hosts return objects with .data
-                                if (tasks && Array.isArray(tasks.data)) {
-                                    unfinishedCount = tasks.data.filter(t => t && t.status && !isTaskDone(t.status)).length;
-                                    break;
-                                }
-                            } catch {}
+                if (!isComplete) {
+                    try {
+                        const response = await client.session.messages({ sessionID });
+                        const messages = response?.data;
+                        if (messages && messages.length > 0) {
+                            const lastMsg = messages[messages.length - 1];
+                            if (lastMsg.role === "assistant") {
+                                await client.session.promptAsync({
+                                    sessionID,
+                                    parts: [{ type: "text", text: "Continue" }]
+                                });
+                            }
                         }
                     } catch (e) {
-                        console.error("Failed to query tasks:", e);
-                    }
-
-                    if (unfinishedCount > 0) {
-                        try {
-                            const msg = `Continue — ${unfinishedCount} unfinished task(s) remain. Continue working?`;
-                            await client.session.promptAsync({
-                                sessionID,
-                                parts: [{ type: "text", text: msg }]
-                            });
-                        } catch (e) {
-                            console.error("Plugin error:", e);
-                        }
-                        return;
-                    }
-
-                    if (!isComplete) {
-                        try {
-                            const response = await client.session.messages({ sessionID });
-                            const messages = response?.data;
-                            if (messages && messages.length > 0) {
-                                const lastMsg = messages[messages.length - 1];
-                                if (lastMsg.role === "assistant") {
-                                    // Keep prompting on every idle when the session is incomplete
-                                    // and the last message is from the assistant.
-                                    await client.session.promptAsync({
-                                        sessionID,
-                                        parts: [{ type: "text", text: "Continue" }]
-                                    });
-                                }
-                            }
-                        } catch (e) {
-                            console.error("Plugin error:", e);
-                        }
+                        (logger && typeof logger.error === "function"
+                            ? logger.error
+                            : console.error)("Plugin error:", e?.stack ?? e);
                     }
                 }
+            }
 
-                if (event.type === "session.deleted") {
-                    sessionCompletionState.delete(sessionID);
-                    setEnabled(sessionID, false);
-                }
-            },
+            if (event.type === "session.deleted") {
+                sessionCompletionState.delete(sessionID);
+                sessionState.delete(sessionID);
+            }
         };
+
+        return returnObj;
     };
 };
-
-// Expose a default taskBabysitter that uses the local implementation when the host wants to mount it into ctx.hooks
-function createTaskBabysitter() {
-    return {
-        event: async () => {
-            // no-op fallback for environments without a dedicated task babysitter.
-            return;
-        },
-    };
-}
 
 export const ContinuePlugin = createContinuePlugin();
 
 export {
     isEnabled,
-    setEnabled,
     consumeNextSessionFlag,
-    cleanupOrphanSessions,
     updateLastSeen,
-    getSessionMeta,
     readState,
     isNextSessionEnabled,
     setNextSessionEnabled,
-    getVersion,
-    incrementVersion,
 };
 
-export default { server: ContinuePlugin, taskBabysitter: createTaskBabysitter };
-
+export default { server: ContinuePlugin };
