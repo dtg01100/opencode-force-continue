@@ -57,7 +57,11 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 );
             },
             event: async ({ event }) => {
-                const { sessionID } = event.properties;
+                let sessionID = event.properties?.sessionID;
+                const part = event.properties?.part;
+                if (!sessionID && part?.sessionID) {
+                    sessionID = part.sessionID;
+                }
                 if (!sessionID) return;
 
                 if (event.type === "session.created") {
@@ -70,9 +74,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 if (!isEnabled(sessionID)) return;
 
                 if (event.type === "message.part.updated") {
-                    const { part } = event.properties;
-                    if (part.type === "tool" && part.tool === "completionSignal") {
-                        sessionCompletionState.set(part.sessionID, true);
+                    if (part?.type === "tool" && part.tool === "completionSignal") {
+                        sessionCompletionState.set(sessionID, true);
                     }
                 }
 
@@ -81,7 +84,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
                     if (!isComplete) {
                         try {
-                            const { data: messages } = await client.session.messages({ path: { sessionID } });
+                            const response = await client.session.messages({ path: { sessionID } });
+                            const messages = response?.data;
                             if (messages && messages.length > 0) {
                                 const lastMsg = messages[messages.length - 1];
                                 if (lastMsg.role === "assistant") {

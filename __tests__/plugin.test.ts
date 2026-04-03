@@ -3,13 +3,9 @@ import { existsSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-vi.mock('@opencode-ai/plugin', async () => {
-  const actual = await vi.importActual('@opencode-ai/plugin');
-  return {
-    ...actual,
-    tool: vi.fn().mockReturnValue({ type: 'tool' }),
-  };
-});
+vi.mock('@opencode-ai/plugin', () => ({
+  tool: vi.fn(() => ({ type: 'tool' })),
+}));
 
 function getFlagPath(sessionID: string): string {
   return join(tmpdir(), `opencode-force-continue-${sessionID}`);
@@ -98,6 +94,31 @@ describe('ContinuePlugin', () => {
     });
 
     expect(sessionCompletionState.get('test-session-3')).toBe(true);
+
+    // Cleanup
+    if (existsSync(flagPath)) unlinkSync(flagPath);
+  });
+
+  it('should mark session complete when message.part.updated has part.sessionID', async () => {
+    const flagPath = getFlagPath('test-session-3b');
+    writeFileSync(flagPath, '');
+
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin(sessionCompletionState);
+    const plugin = await createPlugin(mockCtx);
+
+    await plugin['chat.message']({ sessionID: 'test-session-3b' });
+
+    await plugin.event({
+      event: {
+        type: 'message.part.updated',
+        properties: {
+          part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-3b' }
+        }
+      }
+    });
+
+    expect(sessionCompletionState.get('test-session-3b')).toBe(true);
 
     // Cleanup
     if (existsSync(flagPath)) unlinkSync(flagPath);
