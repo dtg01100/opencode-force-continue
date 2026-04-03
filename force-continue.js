@@ -62,7 +62,7 @@ function updateLastSeen(sessionID) {
   const state = readState();
   const meta = state.sessions[sessionID];
   if (meta && (meta.enabled === true || meta === true)) {
-    state.sessions[sessionID] = { enabled: true, lastSeen: Date.now() };
+    state.sessions[sessionID] = Object.assign({}, meta, { enabled: true, lastSeen: Date.now() });
     writeState(state);
   } else if (!meta) {
     // create metadata for always-active
@@ -71,13 +71,32 @@ function updateLastSeen(sessionID) {
   }
 }
 
+function setSessionCompleted(sessionID, completed = true) {
+  if (!sessionID) return;
+  const state = readState();
+  const meta = state.sessions[sessionID] || {};
+  meta.completed = !!completed;
+  state.sessions[sessionID] = Object.assign({}, meta);
+  writeState(state);
+}
+
+function setSessionPaused(sessionID, paused = true, reason) {
+  if (!sessionID) return;
+  const state = readState();
+  const meta = state.sessions[sessionID] || {};
+  meta.paused = !!paused;
+  if (reason) meta.pauseReason = reason;
+  state.sessions[sessionID] = Object.assign({}, meta);
+  writeState(state);
+}
+
 function getSessionMeta(sessionID) {
   if (!sessionID) return null;
   const state = readState();
   const meta = state.sessions[sessionID];
   if (!meta) return null;
   if (meta === true) return { enabled: true, lastSeen: 0 };
-  return { enabled: !!meta.enabled, lastSeen: meta.lastSeen || 0 };
+  return { enabled: !!meta.enabled, lastSeen: meta.lastSeen || 0, completed: !!meta.completed, paused: !!meta.paused, pauseReason: meta.pauseReason };
 }
 
 function cleanupOrphanSessions(thresholdMs = 5 * 60 * 1000) {
@@ -196,6 +215,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
           if (part?.type === 'tool' && part.tool === 'completionSignal' && part.state?.status === 'completed') {
             // mark complete in-memory
             sessionCompletionState.set(sessionID, true);
+            // persist completion across restarts/processes
+            try { setSessionCompleted(sessionID, true); } catch (e) { console.error('Failed to persist completion state:', e); }
           }
         }
 
@@ -270,6 +291,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     } catch (e) {
                       console.error('Failed to send pause notification:', e);
                     }
+                    // persist paused state so host/UI can surface it
+                    try { setSessionPaused(sessionID, true, explicitRequiresHuman ? 'assistant-request' : 'sensitive-topic'); } catch (e) { console.error('Failed to persist paused state:', e); }
                     // Do not auto-respond; allow host or a human to handle
                     return;
                   }
