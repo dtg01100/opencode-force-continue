@@ -30,14 +30,14 @@ Copy the plugin files into OpenCode's plugin directory.
 
 ```bash
 mkdir -p ~/.config/opencode/plugins
-cp force-continue.server.js force-continue.tui.js flags.js ~/.config/opencode/plugins/
+cp force-continue.js ~/.config/opencode/plugins/
 ```
 
 **Project-level** (current project only):
 
 ```bash
 mkdir -p .opencode/plugins
-cp force-continue.server.js force-continue.tui.js flags.js .opencode/plugins/
+cp force-continue.js .opencode/plugins/
 ```
 
 OpenCode automatically loads any `.js` or `.ts` files from these directories at startup.
