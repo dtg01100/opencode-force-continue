@@ -4,34 +4,20 @@ Forces OpenCode AI to continue when the model stops early. The AI must call `com
 
 ## Installation
 
-```bash
-npm install @dtg01100/opencode-force-continue
-```
-
-Add to your `opencode.json`:
-
-```json
-{
-  "plugin": ["@dtg01100/opencode-force-continue"]
-}
-```
-
-## Alternative: Manual Installation
-
-Drop the plugin files directly into OpenCode's plugin directory (no npm install needed).
+Copy the plugin files into OpenCode's plugin directory.
 
 ### Global (all projects)
 
 ```bash
 mkdir -p ~/.config/opencode/plugins
-cp force-continue.server.js force-continue.tui.js ~/.config/opencode/plugins/
+cp force-continue.server.js force-continue.tui.js flags.js ~/.config/opencode/plugins/
 ```
 
 ### Project-level (current project only)
 
 ```bash
 mkdir -p .opencode/plugins
-cp force-continue.server.js force-continue.tui.js .opencode/plugins/
+cp force-continue.server.js force-continue.tui.js flags.js .opencode/plugins/
 ```
 
 OpenCode automatically loads any `.js` or `.ts` files from these directories at startup.
@@ -63,10 +49,46 @@ Run `/force-continue` again to toggle it off.
 3. **Auto-Continue**: If the session becomes idle without the completion signal, the plugin sends a "Continue" prompt
 4. **Completion**: Once the AI calls `completionSignal`, the plugin stops auto-continuing
 
+## Architecture
+
+### Two-Plugin Design
+
+This plugin uses two files because OpenCode's server and TUI run in **separate processes** with no shared state primitive:
+
+- **`force-continue.server.js`** — Runs in the server process. Handles event hooks, tool definitions, and auto-continue logic.
+- **`force-continue.tui.js`** — Runs in the TUI process. Handles slash commands, status rendering, and user interaction.
+
+### State Persistence
+
+The server plugin has no access to the TUI's KV store, and there is no general-purpose IPC mechanism in OpenCode's plugin API. Instead, both plugins share state via a single JSON file at `tmpdir()/opencode-force-continue/state.json`:
+
+```json
+{
+  "sessions": { "abc123": true },
+  "nextSession": false,
+  "version": 5
+}
+```
+
+- **Atomic writes** — State is written to a temp file then atomically renamed to prevent corruption
+- **Legacy migration** — On first load, old per-session flag files are automatically migrated into the JSON state
+- **Orphan cleanup** — When a session is deleted, its entry is cleaned up from state
+
+### Why Not Use the KV Store?
+
+The TUI plugin uses `api.kv` for reactive UI updates, but the server plugin context only provides `{ project, client, $, directory, worktree }` — no KV access. The server API also has no KV endpoint. File-based state is the only viable cross-process communication available.
+
+## Development
+
+```bash
+npm install
+npm run test:run
+```
+
 ## Requirements
 
 - OpenCode AI
-- `@opencode-ai/plugin` (peer dependency, installed automatically with OpenCode)
+- `@opencode-ai/plugin` (loaded automatically by OpenCode)
 
 ## License
 
