@@ -510,6 +510,110 @@ describe('ContinuePlugin', () => {
         }
       })).resolves.not.toThrow();
     });
+
+    it('should prefer taskBabysitter hook and not prompt', async () => {
+      const { setEnabled } = await import('../force-continue.server.js');
+      setEnabled('test-session-babysitter', true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { taskBabysitter: { event: vi.fn() } }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-babysitter' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-babysitter' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+
+      // Verify taskBabysitter hook is called when present.
+      const hook = { event: vi.fn() };
+      const pluginWithHook = await createPlugin({ client: mockClient, hooks: { taskBabysitter: hook } });
+      await pluginWithHook.event({ event: { type: 'session.idle', properties: { sessionID: 'test-session-babysitter' } } });
+      expect(hook.event).toHaveBeenCalled();
+    });
+
+    it('should prompt Continue when getTasksByParentSession reports incomplete tasks', async () => {
+      const { setEnabled } = await import('../force-continue.server.js');
+      setEnabled('test-session-tasks', true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'in-progress' }, { id: 2, status: 'done' }]) }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-tasks' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-tasks' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        sessionID: 'test-session-tasks',
+        parts: [{ type: 'text', text: 'Continue — 1 unfinished task(s) remain. Continue working?' }]
+      });
+    });
+
+    it('should prompt Continue when backgroundManager.getTasksByParentSession returns object with data array', async () => {
+      const { setEnabled } = await import('../force-continue.server.js');
+      setEnabled('test-session-tasks-data', true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { backgroundManager: { getTasksByParentSession: vi.fn(async () => ({ data: [{ id: 1, status: 'in-progress' }] })) } }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-tasks-data' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-tasks-data' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        sessionID: 'test-session-tasks-data',
+        parts: [{ type: 'text', text: 'Continue — 1 unfinished task(s) remain. Continue working?' }]
+      });
+    });
+
+    it('should treat status "complete" as finished and not prompt', async () => {
+      const { setEnabled } = await import('../force-continue.server.js');
+      setEnabled('test-session-tasks-complete', true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'complete' }]) }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-tasks-complete' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-tasks-complete' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
   });
 
   describe('session.created', () => {

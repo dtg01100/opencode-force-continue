@@ -59,6 +59,12 @@ function getSessionMeta(sessionID) {
     };
 }
 
+function isTaskDone(status) {
+    if (typeof status !== "string") return false;
+    const normalized = status.trim().toLowerCase();
+    return normalized === "done" || normalized === "completed" || normalized === "complete";
+}
+
 function readState() {
     const sessions = {};
     for (const [sessionID, meta] of sessionState.entries()) {
@@ -173,12 +179,12 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                             try {
                                 const tasks = await fn(sessionID);
                                 if (Array.isArray(tasks)) {
-                                    unfinishedCount = tasks.filter(t => t && t.status && t.status !== 'done' && t.status !== 'completed').length;
+                                    unfinishedCount = tasks.filter(t => t && t.status && !isTaskDone(t.status)).length;
                                     break;
                                 }
                                 // some hosts return objects with .data
                                 if (tasks && Array.isArray(tasks.data)) {
-                                    unfinishedCount = tasks.data.filter(t => t && t.status && t.status !== 'done' && t.status !== 'completed').length;
+                                    unfinishedCount = tasks.data.filter(t => t && t.status && !isTaskDone(t.status)).length;
                                     break;
                                 }
                             } catch {}
