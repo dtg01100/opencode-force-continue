@@ -104,5 +104,9 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     };
 };
 
+// Expose a default taskBabysitter that uses the local implementation when the host wants to mount it into ctx.hooks
+import { createTaskBabysitter } from "./src/babysitter.js";
+
 export const ContinuePlugin = createContinuePlugin();
-export default { server: ContinuePlugin };
+export default { server: ContinuePlugin, taskBabysitter: createTaskBabysitter };
+
