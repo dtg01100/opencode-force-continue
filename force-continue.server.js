@@ -21,18 +21,19 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 activeSessions.add(sessionID);
                 sessionCompletionState.set(sessionID, false);
             },
-            "experimental.chat.system.transform": async (_, { system }) => {
-                for (const sessionID of activeSessions) {
-                    if (isEnabled(sessionID)) {
-                        system.push(
-                            "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
-                            "Do not stop or ask for user input until you have called this tool. " +
-                            "If you stop without calling it, you will be forced to continue."
-                        );
-                        return;
-                    }
-                }
+            "experimental.chat.system.transform": async ({ sessionID } = {}, { system }) => {
+                // Only inject the system instruction for the current session when it's active and enabled
+                if (!sessionID) return;
+                if (!activeSessions.has(sessionID)) return;
+                if (!isEnabled(sessionID)) return;
+
+                system.push(
+                    "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
+                    "Do not stop or ask for user input until you have called this tool. " +
+                    "If you stop without calling it, you will be forced to continue."
+                );
             },
+
             event: async ({ event }) => {
                 let sessionID = event.properties?.sessionID;
                 if (event.type === "session.created") {
@@ -60,7 +61,20 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 }
 
                 if (event.type === "session.idle") {
+                    // Task-driven babysitter: delegate to hooks provided by the environment when possible.
+                    // If a task-based babysitter is not available, fall back to the original behavior.
                     const isComplete = sessionCompletionState.get(sessionID);
+
+                    // If an external babysitter hook exists on ctx, prefer it. This keeps the plugin lightweight and
+                    // compatible with environments that provide background task managers (like oh-my-opencode).
+                    if (ctx?.hooks?.taskBabysitter?.event) {
+                        try {
+                            await ctx.hooks.taskBabysitter.event({ event });
+                        } catch (e) {
+                            console.error("Babysitter hook error:", e);
+                        }
+                        return;
+                    }
 
                     if (!isComplete) {
                         try {
