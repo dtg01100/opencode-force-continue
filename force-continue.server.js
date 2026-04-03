@@ -1,5 +1,83 @@
 import { tool } from "@opencode-ai/plugin";
-import { isEnabled, setEnabled, consumeNextSessionFlag, cleanupOrphanSessions, updateLastSeen, getSessionMeta } from "./flags.js";
+
+const sessionState = new Map();
+let nextSessionEnabled = false;
+let currentVersion = 0;
+
+function isEnabled(sessionID) {
+    if (!sessionID || typeof sessionID !== "string") return false;
+    return sessionState.has(sessionID) && sessionState.get(sessionID).enabled === true;
+}
+
+function setEnabled(sessionID, enabled = true) {
+    if (!sessionID || typeof sessionID !== "string") return;
+    if (enabled) {
+        sessionState.set(sessionID, { enabled: true, lastSeen: Date.now() });
+    } else {
+        sessionState.delete(sessionID);
+    }
+}
+
+function isNextSessionEnabled() {
+    return nextSessionEnabled === true;
+}
+
+function setNextSessionEnabled(enabled = true) {
+    nextSessionEnabled = !!enabled;
+}
+
+function consumeNextSessionFlag() {
+    if (!nextSessionEnabled) return false;
+    nextSessionEnabled = false;
+    return true;
+}
+
+function cleanupOrphanSessions(activeSessionSet = new Set()) {
+    if (!(activeSessionSet instanceof Set)) return;
+    for (const sessionID of sessionState.keys()) {
+        if (!activeSessionSet.has(sessionID)) {
+            sessionState.delete(sessionID);
+        }
+    }
+}
+
+function updateLastSeen(sessionID) {
+    if (!sessionID || typeof sessionID !== "string") return;
+    const meta = sessionState.get(sessionID) || {};
+    meta.enabled = true;
+    meta.lastSeen = Date.now();
+    sessionState.set(sessionID, meta);
+}
+
+function getSessionMeta(sessionID) {
+    if (!sessionID || typeof sessionID !== "string") return null;
+    const meta = sessionState.get(sessionID);
+    if (!meta) return { enabled: false, lastSeen: null };
+    return {
+        enabled: !!meta.enabled,
+        lastSeen: typeof meta.lastSeen === "number" ? meta.lastSeen : null,
+    };
+}
+
+function readState() {
+    const sessions = {};
+    for (const [sessionID, meta] of sessionState.entries()) {
+        sessions[sessionID] = Object.assign({}, meta);
+    }
+    return {
+        sessions,
+        nextSession: nextSessionEnabled,
+        version: currentVersion,
+    };
+}
+
+function getVersion() {
+    return currentVersion;
+}
+
+function incrementVersion() {
+    currentVersion += 1;
+}
 
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     return async (ctx) => {
@@ -16,6 +94,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 }),
             },
             "chat.message": async ({ sessionID }) => {
+                if (!isEnabled(sessionID)) return;
                 try { updateLastSeen(sessionID); } catch (e) { /* best-effort */ }
                 sessionCompletionState.set(sessionID, false);
             },
@@ -45,9 +124,13 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 if (!sessionID) return;
 
                 if (event.type === "session.created") {
-                    // Always active: initialize session state and mark lastSeen
-                    try { updateLastSeen(sessionID); } catch (e) {}
-                    sessionCompletionState.set(sessionID, false);
+                    if (consumeNextSessionFlag()) {
+                        setEnabled(sessionID, true);
+                    }
+                    if (isEnabled(sessionID)) {
+                        try { updateLastSeen(sessionID); } catch (e) {}
+                        sessionCompletionState.set(sessionID, false);
+                    }
                     return;
                 }
 
@@ -124,6 +207,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                             if (messages && messages.length > 0) {
                                 const lastMsg = messages[messages.length - 1];
                                 if (lastMsg.role === "assistant") {
+                                    // Keep prompting on every idle when the session is incomplete
+                                    // and the last message is from the assistant.
                                     await client.session.promptAsync({
                                         sessionID,
                                         parts: [{ type: "text", text: "Continue" }]
@@ -138,6 +223,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
                 if (event.type === "session.deleted") {
                     sessionCompletionState.delete(sessionID);
+                    setEnabled(sessionID, false);
                 }
             },
         };
@@ -145,8 +231,30 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 };
 
 // Expose a default taskBabysitter that uses the local implementation when the host wants to mount it into ctx.hooks
-import { createTaskBabysitter } from "./src/babysitter.js";
+function createTaskBabysitter() {
+    return {
+        event: async () => {
+            // no-op fallback for environments without a dedicated task babysitter.
+            return;
+        },
+    };
+}
 
 export const ContinuePlugin = createContinuePlugin();
+
+export {
+    isEnabled,
+    setEnabled,
+    consumeNextSessionFlag,
+    cleanupOrphanSessions,
+    updateLastSeen,
+    getSessionMeta,
+    readState,
+    isNextSessionEnabled,
+    setNextSessionEnabled,
+    getVersion,
+    incrementVersion,
+};
+
 export default { server: ContinuePlugin, taskBabysitter: createTaskBabysitter };
 

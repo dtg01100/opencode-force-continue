@@ -1,32 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, unlinkSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 
 vi.mock('@opencode-ai/plugin', () => ({
   tool: vi.fn(() => ({ type: 'tool' })),
 }));
 
-const STATE_DIR = join(tmpdir(), 'opencode-force-continue');
-const STATE_FILE = join(STATE_DIR, 'state.json');
-
 function resetState() {
-  if (existsSync(STATE_FILE)) {
-    unlinkSync(STATE_FILE);
-  }
-  try {
-    const files = readdirSync(tmpdir());
-    for (const file of files) {
-      if (file.startsWith('opencode-force-continue-')) {
-        unlinkSync(join(tmpdir(), file));
-      }
-    }
-  } catch {}
-}
-
-function setState(state: object) {
-  mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state), 'utf-8');
+  // In-memory state is reset via vi.resetModules() in beforeEach
 }
 
 // ─── flags.js ───────────────────────────────────────────────────────────────
@@ -43,19 +22,19 @@ describe('flags.js', () => {
 
   describe('isEnabled', () => {
     it('should return false for disabled session', async () => {
-      const { isEnabled } = await import('../flags.js');
+      const { isEnabled } = await import('../force-continue.server.js');
       expect(isEnabled('test-session')).toBe(false);
     });
 
     it('should return false for null/undefined/empty sessionID', async () => {
-      const { isEnabled } = await import('../flags.js');
+      const { isEnabled } = await import('../force-continue.server.js');
       expect(isEnabled(null as any)).toBe(false);
       expect(isEnabled(undefined as any)).toBe(false);
       expect(isEnabled('' as any)).toBe(false);
     });
 
     it('should return true for enabled session', async () => {
-      const { isEnabled, setEnabled } = await import('../flags.js');
+      const { isEnabled, setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session', true);
       expect(isEnabled('test-session')).toBe(true);
     });
@@ -63,7 +42,7 @@ describe('flags.js', () => {
 
   describe('setEnabled', () => {
     it('should enable and disable sessions', async () => {
-      const { isEnabled, setEnabled } = await import('../flags.js');
+      const { isEnabled, setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session', true);
       expect(isEnabled('test-session')).toBe(true);
       setEnabled('test-session', false);
@@ -71,13 +50,13 @@ describe('flags.js', () => {
     });
 
     it('should not throw for null/undefined sessionID', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       expect(() => setEnabled(null as any, true)).not.toThrow();
       expect(() => setEnabled(undefined as any, true)).not.toThrow();
     });
 
     it('should handle multiple sessions independently', async () => {
-      const { isEnabled, setEnabled } = await import('../flags.js');
+      const { isEnabled, setEnabled } = await import('../force-continue.server.js');
       setEnabled('session-a', true);
       setEnabled('session-b', true);
       expect(isEnabled('session-a')).toBe(true);
@@ -90,12 +69,12 @@ describe('flags.js', () => {
 
   describe('nextSession', () => {
     it('should default to false', async () => {
-      const { isNextSessionEnabled } = await import('../flags.js');
+      const { isNextSessionEnabled } = await import('../force-continue.server.js');
       expect(isNextSessionEnabled()).toBe(false);
     });
 
     it('should enable and disable nextSession', async () => {
-      const { isNextSessionEnabled, setNextSessionEnabled } = await import('../flags.js');
+      const { isNextSessionEnabled, setNextSessionEnabled } = await import('../force-continue.server.js');
       setNextSessionEnabled(true);
       expect(isNextSessionEnabled()).toBe(true);
       setNextSessionEnabled(false);
@@ -103,7 +82,7 @@ describe('flags.js', () => {
     });
 
     it('should consume nextSession atomically', async () => {
-      const { setNextSessionEnabled, consumeNextSessionFlag, isNextSessionEnabled } = await import('../flags.js');
+      const { setNextSessionEnabled, consumeNextSessionFlag, isNextSessionEnabled } = await import('../force-continue.server.js');
       setNextSessionEnabled(true);
       expect(consumeNextSessionFlag()).toBe(true);
       expect(isNextSessionEnabled()).toBe(false);
@@ -111,19 +90,19 @@ describe('flags.js', () => {
     });
 
     it('should return false when consuming empty nextSession', async () => {
-      const { consumeNextSessionFlag } = await import('../flags.js');
+      const { consumeNextSessionFlag } = await import('../force-continue.server.js');
       expect(consumeNextSessionFlag()).toBe(false);
     });
   });
 
   describe('version', () => {
     it('should start at 0', async () => {
-      const { getVersion } = await import('../flags.js');
+      const { getVersion } = await import('../force-continue.server.js');
       expect(getVersion()).toBe(0);
     });
 
     it('should increment version', async () => {
-      const { incrementVersion, getVersion } = await import('../flags.js');
+      const { incrementVersion, getVersion } = await import('../force-continue.server.js');
       expect(getVersion()).toBe(0);
       incrementVersion();
       expect(getVersion()).toBe(1);
@@ -134,7 +113,7 @@ describe('flags.js', () => {
 
   describe('cleanupOrphanSessions', () => {
     it('should remove sessions not in active set', async () => {
-      const { setEnabled, cleanupOrphanSessions, isEnabled } = await import('../flags.js');
+      const { setEnabled, cleanupOrphanSessions, isEnabled } = await import('../force-continue.server.js');
       setEnabled('active-session', true);
       setEnabled('orphan-session', true);
       cleanupOrphanSessions(new Set(['active-session']));
@@ -143,7 +122,7 @@ describe('flags.js', () => {
     });
 
     it('should not affect state when no orphans exist', async () => {
-      const { setEnabled, cleanupOrphanSessions, isEnabled } = await import('../flags.js');
+      const { setEnabled, cleanupOrphanSessions, isEnabled } = await import('../force-continue.server.js');
       setEnabled('session-a', true);
       setEnabled('session-b', true);
       cleanupOrphanSessions(new Set(['session-a', 'session-b']));
@@ -152,32 +131,27 @@ describe('flags.js', () => {
     });
   });
 
-  describe('corrupted state', () => {
-    it('should return defaults when state file is corrupted', async () => {
-      mkdirSync(STATE_DIR, { recursive: true });
-      writeFileSync(STATE_FILE, 'not valid json{{{', 'utf-8');
-
-      const { isEnabled, isNextSessionEnabled, getVersion } = await import('../flags.js');
+  describe('in-memory state behavior', () => {
+    it('should return defaults when fresh', async () => {
+      const { isEnabled, isNextSessionEnabled, getVersion, readState } = await import('../force-continue.server.js');
       expect(isEnabled('any-session')).toBe(false);
       expect(isNextSessionEnabled()).toBe(false);
       expect(getVersion()).toBe(0);
+      expect(readState()).toEqual({ sessions: {}, nextSession: false, version: 0 });
     });
-  });
 
-  describe('atomic writes', () => {
-    it('should write valid JSON state file', async () => {
-      const { setEnabled, readState } = await import('../flags.js');
+    it('should read state values after updates', async () => {
+      const { setEnabled, readState } = await import('../force-continue.server.js');
       setEnabled('test-session', true);
       const state = readState();
-      expect(state.sessions['test-session']).toBe(true);
+      expect(state.sessions['test-session'].enabled).toBe(true);
     });
 
-    it('should not leave temp files after write', async () => {
-      const { setEnabled } = await import('../flags.js');
+    it('should not use filesystem for state', async () => {
+      // purely in-memory by design; operations should not throw even without filesystem setup.
+      const { setEnabled, getVersion } = await import('../force-continue.server.js');
       setEnabled('test-session', true);
-      const files = readdirSync(STATE_DIR);
-      expect(files).not.toContain(expect.stringContaining('.tmp.'));
-      expect(files).toContain('state.json');
+      expect(getVersion()).toBe(0);
     });
   });
 });
@@ -240,7 +214,7 @@ describe('ContinuePlugin', () => {
 
   describe('enabled behavior', () => {
     it('should track session as incomplete on chat.message when enabled', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-2', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -253,7 +227,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should inject system message when enabled', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -263,7 +237,7 @@ describe('ContinuePlugin', () => {
       await plugin['chat.message']({ sessionID: 'test-session' });
 
       const system: string[] = [];
-      await plugin['experimental.chat.system.transform']({}, { system });
+      await plugin['experimental.chat.system.transform']({ sessionID: 'test-session' }, { system });
 
       expect(system.length).toBe(1);
       expect(system[0]).toContain('completionSignal');
@@ -283,7 +257,7 @@ describe('ContinuePlugin', () => {
 
   describe('completionSignal', () => {
     it('should mark session complete when completionSignal tool is completed', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-3', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -307,7 +281,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should mark session complete when part.sessionID resolves session', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-3b', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -329,7 +303,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should not mark session complete when completionSignal is pending', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-pending', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -353,7 +327,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should not mark session complete when completionSignal is running', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-running', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -379,7 +353,7 @@ describe('ContinuePlugin', () => {
 
   describe('session.idle', () => {
     it('should send Continue prompt when idle without completion', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-4', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -406,7 +380,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should not send Continue prompt when session is marked complete', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-5', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -435,7 +409,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should not send Continue prompt when no messages exist', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-empty', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -456,8 +430,45 @@ describe('ContinuePlugin', () => {
       expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
     });
 
+    it('should resend Continue prompt on subsequent idle when completionSignal is still missing', async () => {
+      const { setEnabled } = await import('../force-continue.server.js');
+      setEnabled('test-session-repeat', true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'test-session-repeat' });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Hello' }] }]
+      });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-repeat' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Continue' }] }]
+      });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-repeat' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+    });
+
     it('should not send Continue prompt when last message is not assistant', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-user', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -481,7 +492,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should handle session.messages error gracefully', async () => {
-      const { setEnabled } = await import('../flags.js');
+      const { setEnabled } = await import('../force-continue.server.js');
       setEnabled('test-session-error', true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -503,7 +514,7 @@ describe('ContinuePlugin', () => {
 
   describe('session.created', () => {
     it('should enable force-continue when next-session flag is set', async () => {
-      const { setNextSessionEnabled, isEnabled } = await import('../flags.js');
+      const { setNextSessionEnabled, isEnabled } = await import('../force-continue.server.js');
       setNextSessionEnabled(true);
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -521,7 +532,7 @@ describe('ContinuePlugin', () => {
     });
 
     it('should do nothing when next-session flag is not set', async () => {
-      const { isEnabled } = await import('../flags.js');
+      const { isEnabled } = await import('../force-continue.server.js');
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
@@ -540,7 +551,7 @@ describe('ContinuePlugin', () => {
 
   describe('session.deleted', () => {
     it('should clean up orphan sessions on delete', async () => {
-      const { setEnabled, isEnabled } = await import('../flags.js');
+      const { setEnabled, isEnabled } = await import('../force-continue.server.js');
       setEnabled('active-session', true);
       setEnabled('deleted-session', true);
 

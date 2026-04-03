@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_FILES=("force-continue.js")
+PLUGIN_FILES=("force-continue.server.js")
 
 # Determine target directory
 if [ "${1:-}" = "--project" ]; then

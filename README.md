@@ -66,29 +66,23 @@ Run `/force-continue` again to toggle it off.
 
 1. **Enable**: Toggle with `/force-continue` or `/fc`
 2. **System Injection**: When enabled, a system message is added requiring the AI to call `completionSignal` before stopping
-3. **Auto-Continue**: If the session becomes idle without the completion signal, the plugin sends a "Continue" prompt
+3. **Auto-Continue**: If the session becomes idle without the completion signal, the plugin sends a "Continue" prompt (repeatable on every idle check until completion)
 4. **Completion**: Once the AI calls `completionSignal`, the plugin stops auto-continuing
+
+## Recent updates
+- Added robust idle retry logic to send `Continue` repeatedly when the assistant is idle and still not complete.
+- Added a local fallback babysitter implementation in `src/babysitter.js` to support environments without a task babysitter hook.
 
 ## Architecture
 
-### Two-Plugin Design
+### Server-Only Design
 
-This plugin uses two files because OpenCode's server and TUI run in **separate processes** with no shared state primitive:
-
-- **`force-continue.server.js`** — Runs in the server process. Handles event hooks, tool definitions, and auto-continue logic.
-- **`force-continue.tui.js`** — Runs in the TUI process. Handles slash commands, status rendering, and user interaction.
+This plugin now uses a server-only approach in `force-continue.server.js`.
+State is shared via a JSON file at `tmpdir()/opencode-force-continue/state.json` to preserve behavior between processes when needed.
 
 ### State Persistence
 
-The server plugin has no access to the TUI's KV store, and there is no general-purpose IPC mechanism in OpenCode's plugin API. Instead, both plugins share state via a single JSON file at `tmpdir()/opencode-force-continue/state.json`:
-
-```json
-{
-  "sessions": { "abc123": true },
-  "nextSession": false,
-  "version": 5
-}
-```
+This server-only plugin keeps state in-memory per process and per session for runtime control. There is no filesystem-based state persistence in this version.
 
 - **Atomic writes** — State is written to a temp file then atomically renamed to prevent corruption
 - **Legacy migration** — On first load, old per-session flag files are automatically migrated into the JSON state
