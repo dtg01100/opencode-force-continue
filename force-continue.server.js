@@ -1,10 +1,9 @@
 import { tool } from "@opencode-ai/plugin";
-import { isEnabled, setEnabled, consumeNextSessionFlag, cleanupOrphanSessions } from "./flags.js";
+import { isEnabled, setEnabled, consumeNextSessionFlag, cleanupOrphanSessions, updateLastSeen, getSessionMeta } from "./flags.js";
 
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     return async (ctx) => {
         const { client } = ctx;
-        const activeSessions = new Set();
 
         return {
             tool: {
@@ -18,14 +17,19 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
             },
             "chat.message": async ({ sessionID }) => {
                 if (!isEnabled(sessionID)) return;
-                activeSessions.add(sessionID);
+                try { updateLastSeen(sessionID); } catch (e) { /* best-effort */ }
                 sessionCompletionState.set(sessionID, false);
             },
+
             "experimental.chat.system.transform": async ({ sessionID } = {}, { system }) => {
-                // Only inject the system instruction for the current session when it's active and enabled
+                // Only inject the system instruction for the current session when it's enabled and recently active
                 if (!sessionID) return;
-                if (!activeSessions.has(sessionID)) return;
-                if (!isEnabled(sessionID)) return;
+                const meta = getSessionMeta(sessionID);
+                if (!meta || !meta.enabled) return;
+                const lastSeen = meta.lastSeen || 0;
+                const now = Date.now();
+                const TTL = 5 * 60 * 1000; // 5 minutes
+                if (lastSeen && now - lastSeen > TTL) return;
 
                 system.push(
                     "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
@@ -33,6 +37,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     "If you stop without calling it, you will be forced to continue."
                 );
             },
+
 
             event: async ({ event }) => {
                 let sessionID = event.properties?.sessionID;
@@ -138,8 +143,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 }
 
                 if (event.type === "session.deleted") {
-                    activeSessions.delete(sessionID);
-                    cleanupOrphanSessions(activeSessions);
+                    // best-effort cleanup of stale sessions (uses TTL inside flags.js)
+                    try { cleanupOrphanSessions(); } catch (e) { /* ignore */ }
                 }
             },
         };

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 
@@ -41,12 +41,13 @@ function migrateLegacyFlags() {
     }
 
     try {
-        const files = require("fs").readdirSync(tmpdir());
+        const files = readdirSync(tmpdir());
         for (const file of files) {
             if (file.startsWith("opencode-force-continue-") && file !== "opencode-force-continue-next") {
                 const sessionID = file.slice("opencode-force-continue-".length);
                 if (sessionID) {
-                    state.sessions[sessionID] = true;
+                    // migrate legacy boolean to metadata form
+                    state.sessions[sessionID] = { enabled: true, lastSeen: Date.now() };
                     try { unlinkSync(join(tmpdir(), file)); } catch {}
                     migrated = true;
                 }
@@ -62,18 +63,40 @@ function migrateLegacyFlags() {
 function isEnabled(sessionID) {
     if (!sessionID) return false;
     const state = readState();
-    return !!state.sessions[sessionID];
+    const meta = state.sessions[sessionID];
+    return !!(meta && (meta.enabled === true || meta === true));
 }
 
 function setEnabled(sessionID, enabled) {
     if (!sessionID) return;
     const state = readState();
     if (enabled) {
-        state.sessions[sessionID] = true;
+        // store metadata with lastSeen timestamp
+        state.sessions[sessionID] = { enabled: true, lastSeen: Date.now() };
     } else {
+        // remove session entry
         delete state.sessions[sessionID];
     }
     writeState(state);
+}
+
+function updateLastSeen(sessionID) {
+    if (!sessionID) return;
+    const state = readState();
+    const meta = state.sessions[sessionID];
+    if (meta && (meta.enabled === true || meta === true)) {
+        state.sessions[sessionID] = { enabled: true, lastSeen: Date.now() };
+        writeState(state);
+    }
+}
+
+function getSessionMeta(sessionID) {
+    if (!sessionID) return null;
+    const state = readState();
+    const meta = state.sessions[sessionID];
+    if (!meta) return null;
+    if (meta === true) return { enabled: true, lastSeen: 0 };
+    return { enabled: !!meta.enabled, lastSeen: meta.lastSeen || 0 };
 }
 
 function isNextSessionEnabled() {
@@ -107,11 +130,15 @@ function getVersion() {
     return state.version || 0;
 }
 
-function cleanupOrphanSessions(activeSessionIds) {
+function cleanupOrphanSessions(thresholdMs = 5 * 60 * 1000) {
     const state = readState();
     let changed = false;
-    for (const sessionID of Object.keys(state.sessions)) {
-        if (!activeSessionIds.has(sessionID)) {
+    const now = Date.now();
+    for (const [sessionID, meta] of Object.entries(state.sessions)) {
+        // remove if not enabled or lastSeen older than threshold
+        const enabled = (meta && meta.enabled) || meta === true;
+        const lastSeen = (meta && meta.lastSeen) || 0;
+        if (!enabled || (lastSeen && now - lastSeen > thresholdMs)) {
             delete state.sessions[sessionID];
             changed = true;
         }
@@ -135,4 +162,6 @@ export {
     readState,
     writeState,
     STATE_FILE,
+    updateLastSeen,
+    getSessionMeta,
 };
