@@ -1,39 +1,4 @@
-import { existsSync, writeFileSync, unlinkSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-
-const NEXT_SESSION_FLAG = join(tmpdir(), "opencode-force-continue-next");
-
-function getFlagPath(sessionID) {
-    return join(tmpdir(), `opencode-force-continue-${sessionID}`);
-}
-
-function isEnabled(sessionID) {
-    if (!sessionID) return false;
-    return existsSync(getFlagPath(sessionID));
-}
-
-function setEnabled(sessionID, enabled) {
-    if (!sessionID) return;
-    const flagPath = getFlagPath(sessionID);
-    if (enabled) {
-        writeFileSync(flagPath, "");
-    } else {
-        try { unlinkSync(flagPath); } catch {}
-    }
-}
-
-function isNextSessionEnabled() {
-    return existsSync(NEXT_SESSION_FLAG);
-}
-
-function setNextSessionEnabled(enabled) {
-    if (enabled) {
-        writeFileSync(NEXT_SESSION_FLAG, "");
-    } else {
-        try { unlinkSync(NEXT_SESSION_FLAG); } catch {}
-    }
-}
+import { isEnabled, setEnabled, isNextSessionEnabled, setNextSessionEnabled, incrementVersion } from "./flags.js";
 
 /** @type {import("@opencode-ai/plugin/tui").TuiPlugin} */
 async function tuiPlugin(api) {
@@ -66,9 +31,9 @@ async function tuiPlugin(api) {
 
         if (!text || !createElement) return null;
 
-        // Terminal UI requires text nodes to be wrapped in a <text> element.
         const el = createElement("text");
         setProp(el, "fg", api.theme.current.warning);
+        setProp(el, "newline", true);
         insertNode(el, createTextNode(text));
         return el;
     }
@@ -98,7 +63,7 @@ async function tuiPlugin(api) {
                         const currentState = isEnabled(sessionID);
                         const newState = !currentState;
                         setEnabled(sessionID, newState);
-                        api.kv.set("force-continue:version", (api.kv.get("force-continue:version", 0) || 0) + 1);
+                        api.kv.set("force-continue:version", incrementVersion());
                         api.ui.toast({
                             title: "Force Continue",
                             message: newState
@@ -128,7 +93,7 @@ async function tuiPlugin(api) {
                     const currentState = isNextSessionEnabled();
                     const newState = !currentState;
                     setNextSessionEnabled(newState);
-                    api.kv.set("force-continue:version", (api.kv.get("force-continue:version", 0) || 0) + 1);
+                    api.kv.set("force-continue:version", incrementVersion());
                     api.ui.toast({
                         title: "Force Continue",
                         message: newState

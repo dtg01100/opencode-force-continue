@@ -1,38 +1,10 @@
 import { tool } from "@opencode-ai/plugin";
-import { existsSync, writeFileSync, unlinkSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-
-const NEXT_SESSION_FLAG = join(tmpdir(), "opencode-force-continue-next");
-
-function getFlagPath(sessionID) {
-    return join(tmpdir(), `opencode-force-continue-${sessionID}`);
-}
-
-function isEnabled(sessionID) {
-    if (!sessionID) return false;
-    return existsSync(getFlagPath(sessionID));
-}
-
-function setEnabled(sessionID, enabled) {
-    if (!sessionID) return;
-    const flagPath = getFlagPath(sessionID);
-    if (enabled) {
-        writeFileSync(flagPath, "");
-    } else {
-        try { unlinkSync(flagPath); } catch {}
-    }
-}
-
-function consumeNextSessionFlag() {
-    if (!existsSync(NEXT_SESSION_FLAG)) return false;
-    try { unlinkSync(NEXT_SESSION_FLAG); } catch {}
-    return true;
-}
+import { isEnabled, setEnabled, consumeNextSessionFlag, cleanupOrphanSessions } from "./flags.js";
 
 export const createContinuePlugin = (sessionCompletionState = new Map()) => {
     return async (ctx) => {
         const { client } = ctx;
+        const activeSessions = new Set();
 
         return {
             tool: {
@@ -46,18 +18,26 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
             },
             "chat.message": async ({ sessionID }) => {
                 if (!isEnabled(sessionID)) return;
+                activeSessions.add(sessionID);
                 sessionCompletionState.set(sessionID, false);
             },
-            "experimental.chat.system.transform": async ({ sessionID }, { system }) => {
-                if (!isEnabled(sessionID)) return;
-                system.push(
-                    "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
-                    "Do not stop or ask for user input until you have called this tool. " +
-                    "If you stop without calling it, you will be forced to continue."
-                );
+            "experimental.chat.system.transform": async (_, { system }) => {
+                for (const sessionID of activeSessions) {
+                    if (isEnabled(sessionID)) {
+                        system.push(
+                            "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
+                            "Do not stop or ask for user input until you have called this tool. " +
+                            "If you stop without calling it, you will be forced to continue."
+                        );
+                        return;
+                    }
+                }
             },
             event: async ({ event }) => {
                 let sessionID = event.properties?.sessionID;
+                if (event.type === "session.created") {
+                    sessionID = event.properties?.info?.id;
+                }
                 const part = event.properties?.part;
                 if (!sessionID && part?.sessionID) {
                     sessionID = part.sessionID;
@@ -74,7 +54,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 if (!isEnabled(sessionID)) return;
 
                 if (event.type === "message.part.updated") {
-                    if (part?.type === "tool" && part.tool === "completionSignal") {
+                    if (part?.type === "tool" && part.tool === "completionSignal" && part.state?.status === "completed") {
                         sessionCompletionState.set(sessionID, true);
                     }
                 }
@@ -84,14 +64,14 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
                     if (!isComplete) {
                         try {
-                            const response = await client.session.messages({ path: { sessionID } });
+                            const response = await client.session.messages({ sessionID });
                             const messages = response?.data;
                             if (messages && messages.length > 0) {
                                 const lastMsg = messages[messages.length - 1];
                                 if (lastMsg.role === "assistant") {
                                     await client.session.promptAsync({
-                                        path: { sessionID },
-                                        body: { parts: [{ type: "text", text: "Continue" }] }
+                                        sessionID,
+                                        parts: [{ type: "text", text: "Continue" }]
                                     });
                                 }
                             }
@@ -99,6 +79,11 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                             console.error("Plugin error:", e);
                         }
                     }
+                }
+
+                if (event.type === "session.deleted") {
+                    activeSessions.delete(sessionID);
+                    cleanupOrphanSessions(activeSessions);
                 }
             },
         };
