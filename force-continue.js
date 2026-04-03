@@ -170,6 +170,16 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
   return async (ctx) => {
     const { client } = ctx;
 
+    // Seed in-memory completion state from persisted state for resilience across restarts
+    try {
+      const persisted = readState();
+      for (const [sid, meta] of Object.entries(persisted.sessions || {})) {
+        if (meta && meta.completed) sessionCompletionState.set(sid, true);
+      }
+    } catch (e) {
+      try { console.error('Failed to seed completion state from disk:', e); } catch (e2) {}
+    }
+
     return {
       tool: {
         completionSignal: tool({
