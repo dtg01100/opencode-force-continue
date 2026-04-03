@@ -61,10 +61,8 @@ function migrateLegacyFlags() {
 }
 
 function isEnabled(sessionID) {
-    if (!sessionID) return false;
-    const state = readState();
-    const meta = state.sessions[sessionID];
-    return !!(meta && (meta.enabled === true || meta === true));
+    // Always-on mode: plugin is active for all sessions
+    return true;
 }
 
 function setEnabled(sessionID, enabled) {
