@@ -61,8 +61,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 }
 
                 if (event.type === "session.idle") {
-                    // Task-driven babysitter: delegate to hooks provided by the environment when possible.
-                    // If a task-based babysitter is not available, fall back to the original behavior.
                     const isComplete = sessionCompletionState.get(sessionID);
 
                     // If an external babysitter hook exists on ctx, prefer it. This keeps the plugin lightweight and
@@ -72,6 +70,50 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                             await ctx.hooks.taskBabysitter.event({ event });
                         } catch (e) {
                             console.error("Babysitter hook error:", e);
+                        }
+                        return;
+                    }
+
+                    // Attempt to detect unfinished tasks via host-provided helpers. If any unfinished tasks remain,
+                    // inject a Continue prompt that reminds the assistant there are unfinished items — even if the
+                    // completionSignal tool was already emitted.
+                    let unfinishedCount = 0;
+                    try {
+                        const getTasksCandidates = [
+                            ctx?.hooks?.getTasksByParentSession,
+                            ctx?.hooks?.backgroundManager?.getTasksByParentSession,
+                            ctx?.getTasksByParentSession,
+                            ctx?.backgroundManager?.getTasksByParentSession,
+                        ];
+
+                        for (const fn of getTasksCandidates) {
+                            if (typeof fn !== "function") continue;
+                            try {
+                                const tasks = await fn(sessionID);
+                                if (Array.isArray(tasks)) {
+                                    unfinishedCount = tasks.filter(t => t && t.status && t.status !== 'done' && t.status !== 'completed').length;
+                                    break;
+                                }
+                                // some hosts return objects with .data
+                                if (tasks && Array.isArray(tasks.data)) {
+                                    unfinishedCount = tasks.data.filter(t => t && t.status && t.status !== 'done' && t.status !== 'completed').length;
+                                    break;
+                                }
+                            } catch {}
+                        }
+                    } catch (e) {
+                        console.error("Failed to query tasks:", e);
+                    }
+
+                    if (unfinishedCount > 0) {
+                        try {
+                            const msg = `Continue — ${unfinishedCount} unfinished task(s) remain. Continue working?`;
+                            await client.session.promptAsync({
+                                sessionID,
+                                parts: [{ type: "text", text: msg }]
+                            });
+                        } catch (e) {
+                            console.error("Plugin error:", e);
                         }
                         return;
                     }
