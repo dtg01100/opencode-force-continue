@@ -437,9 +437,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 meta.awaitingGuidance = null;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
-            if (effectiveCompletionState.get(sessionID) !== true) {
-                effectiveCompletionState.set(sessionID, false);
-            }
+            effectiveCompletionState.set(sessionID, false);
         };
 
         // ─── System Prompt Transform ────────────────────────────────────────
