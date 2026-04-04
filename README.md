@@ -4,6 +4,12 @@ Forces OpenCode AI to continue when the model stops early by detecting unfinishe
 
 The AI is expected to call `completionSignal` when it has finished a task; the plugin treats any session without that signal as incomplete and will attempt to auto-continue.
 
+## Why
+
+LLM-powered coding agents frequently stop mid-task — the model generates a response, the tool calls complete, but there's more work remaining. This happens for many reasons: the context window truncates mid-thought, the model reaches a natural stopping point it mistakes for done, or it simply moves on before finishing.
+
+This plugin solves that by acting as a safety net: when a session goes idle without explicitly signaling completion, the plugin notices and prompts the model to keep going. It escalates if the model keeps stopping, detects loops, and blocks dangerous commands. The model signals it is truly done by calling `completionSignal` — at which point the plugin stops nudging and treats the session as complete.
+
 ## Installation
 
 ### Quick install (global)
