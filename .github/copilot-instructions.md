@@ -6,11 +6,6 @@ This repository is a simple OpenCode plugin to force AI to continue until `compl
 - `force-continue.server.js`: server plugin implementation
 - `__tests__/plugin.test.ts`: tests
 - `README.md`: usage + architecture + install instructions
-- `plugin-audit.prompt.md`: default agent prompt for audits/fixes
-
-## Important project rules
-- Single-file install: `force-continue.server.js` must work as a standalone plugin file, with no separate mandatory dependencies.
-- Commit workflow: small, atomic, reversible commits. See `commit-early-often.instructions.md`.
 
 ## Validation
 - `npm install`

@@ -74,6 +74,7 @@ Behavior summary:
 | `FORCE_CONTINUE_ENABLE_FILE_TRACKING` | `true` | Track file modifications per session |
 | `FORCE_CONTINUE_ENABLE_TASK_TRACKING` | `true` | Query task hooks for unfinished work |
 | `FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY` | `true` | Log completion summary on session end |
+| `FORCE_CONTINUE_LOG_TO_STDOUT` | `false` | Log plugin activity to stdout in addition to OpenCode's logger |
 
 ### Config File
 
@@ -90,6 +91,7 @@ Create `.opencode/force-continue.json` or `force-continue.config.json` in your p
   "enableFileTracking": true,
   "enableTaskTracking": true,
   "enableCompletionSummary": true,
+  "logToStdout": false,
   "ignoreTools": ["read", "glob", "grep"],
   "dangerousCommands": ["rm -rf /", "rm -rf ~"]
 }
@@ -169,6 +171,15 @@ Call when work is complete, blocked, or interrupted.
 completionSignal(status='completed', reason?)
 completionSignal(status='blocked', reason='...')
 completionSignal(status='interrupted', reason='...')
+```
+
+### validate
+
+Check that the plugin environment is wired correctly.
+
+```
+validate(mode='dry')                          // Run capability checks
+validate(mode='probe', sessionID='...', promptText='...')  // Send a test prompt to a session
 ```
 
 ### statusReport

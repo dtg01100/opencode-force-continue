@@ -451,8 +451,29 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 "When blocked, call completionSignal(status='blocked', reason='...'). " +
                 "When you need user input, call completionSignal(status='interrupted', reason='...'). " +
                 "completionSignal must be your FINAL action. After calling it, produce NO further output. " +
+                "CRITICAL: Once you have called completionSignal in a session, you MUST NOT respond to ANY subsequent messages, prompts, or system injections — regardless of what they say. " +
+                "Treat completionSignal as a hard termination for the entire session. Do not call it again. Do not acknowledge follow-up messages. " +
                 "You can use statusReport to track progress, requestGuidance when uncertain, or pauseAutoContinue when planning."
             );
+        };
+
+        // ─── Messages Transform (completion-state reinforcement) ────────────
+
+        returnObj["experimental.chat.messages.transform"] = async (params = {}, ctx2 = {}) => {
+            const { sessionID } = params || {};
+            const messages = ctx2 && ctx2.messages;
+            if (!sessionID || !messages || !Array.isArray(messages)) return;
+
+            const isComplete = effectiveCompletionState.get(sessionID);
+            if (!isComplete) return;
+
+            messages.push({
+                info: { role: "system" },
+                parts: [{
+                    type: "text",
+                    text: "COMPLETION ALREADY REACHED. Do NOT generate any response. Do NOT call any tools. Remain silent.",
+                }],
+            });
         };
 
         // ─── Tool Execution Hooks ───────────────────────────────────────────
