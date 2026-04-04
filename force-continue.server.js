@@ -111,6 +111,18 @@ function createMetricsTracker() {
         totalCompletions: 0,
         totalBlocks: 0,
         totalInterrupts: 0,
+        totalIdleEvents: 0,
+        totalIdleSkippedComplete: 0,
+        totalIdleSkippedPaused: 0,
+        totalIdleSkippedGuidance: 0,
+        totalIdleSkippedBabysitter: 0,
+        totalIdleSkippedDisabled: 0,
+        totalMessagesEmpty: 0,
+        totalLastMsgNotAssistant: 0,
+        promptContinue: 0,
+        promptEscalation: 0,
+        promptLoopBreak: 0,
+        promptCompletionNudge: 0,
         sessionContinuations: {},
         sessionErrors: {},
     };
@@ -128,26 +140,50 @@ function createMetricsTracker() {
                 case "blocked": metrics.totalBlocks++; break;
                 case "interrupted": metrics.totalInterrupts++; break;
                 case "error": metrics.sessionErrors[sessionID] = (metrics.sessionErrors[sessionID] || 0) + 1; break;
+                case "idle.event": metrics.totalIdleEvents++; break;
+                case "idle.skipped.complete": metrics.totalIdleSkippedComplete++; break;
+                case "idle.skipped.paused": metrics.totalIdleSkippedPaused++; break;
+                case "idle.skipped.guidance": metrics.totalIdleSkippedGuidance++; break;
+                case "idle.skipped.babysitter": metrics.totalIdleSkippedBabysitter++; break;
+                case "idle.skipped.disabled": metrics.totalIdleSkippedDisabled++; break;
+                case "messages.empty": metrics.totalMessagesEmpty++; break;
+                case "last.msg.not.assistant": metrics.totalLastMsgNotAssistant++; break;
+                case "prompt.continue": metrics.promptContinue++; break;
+                case "prompt.escalation": metrics.promptEscalation++; break;
+                case "prompt.loop.break": metrics.promptLoopBreak++; break;
+                case "prompt.completion.nudge": metrics.promptCompletionNudge++; break;
             }
         },
-        getSummary() {
-            const avgContinuations = metrics.totalSessions > 0 ? (metrics.totalContinuations / metrics.totalSessions).toFixed(2) : 0;
-            const loopRate = metrics.totalContinuations > 0 ? (metrics.totalLoopDetections / metrics.totalContinuations * 100).toFixed(1) : 0;
-            return {
-                totalSessions: metrics.totalSessions,
-                totalContinuations: metrics.totalContinuations,
-                avgContinuationsPerSession: parseFloat(avgContinuations),
-                loopDetectionCount: metrics.totalLoopDetections,
-                loopDetectionRate: `${loopRate}%`,
-                toolLoopDetections: metrics.totalToolLoopDetections,
-                circuitBreakerTrips: metrics.totalCircuitBreakerTrips,
-                escalations: metrics.totalEscalations,
-                completions: metrics.totalCompletions,
-                blocks: metrics.totalBlocks,
-                interrupts: metrics.totalInterrupts,
-                sessionsWithErrors: Object.entries(metrics.sessionErrors).filter(([, c]) => c > 0).length,
-            };
-        },
+            getSummary() {
+                const avgContinuations = metrics.totalSessions > 0 ? (metrics.totalContinuations / metrics.totalSessions).toFixed(2) : 0;
+                const loopRate = metrics.totalContinuations > 0 ? (metrics.totalLoopDetections / metrics.totalContinuations * 100).toFixed(1) : 0;
+                return {
+                    totalSessions: metrics.totalSessions,
+                    totalContinuations: metrics.totalContinuations,
+                    avgContinuationsPerSession: parseFloat(avgContinuations),
+                    loopDetectionCount: metrics.totalLoopDetections,
+                    loopDetectionRate: `${loopRate}%`,
+                    toolLoopDetections: metrics.totalToolLoopDetections,
+                    circuitBreakerTrips: metrics.totalCircuitBreakerTrips,
+                    escalations: metrics.totalEscalations,
+                    completions: metrics.totalCompletions,
+                    blocks: metrics.totalBlocks,
+                    interrupts: metrics.totalInterrupts,
+                    idleEvents: metrics.totalIdleEvents,
+                    idleSkippedComplete: metrics.totalIdleSkippedComplete,
+                    idleSkippedPaused: metrics.totalIdleSkippedPaused,
+                    idleSkippedGuidance: metrics.totalIdleSkippedGuidance,
+                    idleSkippedBabysitter: metrics.totalIdleSkippedBabysitter,
+                    idleSkippedDisabled: metrics.totalIdleSkippedDisabled,
+                    messagesEmpty: metrics.totalMessagesEmpty,
+                    lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
+                    promptContinue: metrics.promptContinue,
+                    promptEscalation: metrics.promptEscalation,
+                    promptLoopBreak: metrics.promptLoopBreak,
+                    promptCompletionNudge: metrics.promptCompletionNudge,
+                    sessionsWithErrors: Object.entries(metrics.sessionErrors).filter(([, c]) => c > 0).length,
+                };
+            },
     };
 }
 
@@ -394,6 +430,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 meta.responseHistory = [];
                 meta.toolCallHistory = [];
                 meta.errorCount = 0;
+                meta.autoContinuePaused = null;
+                meta.awaitingGuidance = null;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
             effectiveCompletionState.set(sessionID, false);
@@ -535,13 +573,25 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
             }
 
             if (event.type === "session.idle") {
+                metrics.record(sessionID, "idle.event");
+                log("debug", "session.idle received", { sessionID });
+
                 const isComplete = effectiveCompletionState.get(sessionID);
                 const meta = sessionState.get(sessionID) || { continuationCount: 0 };
+
+                // Check if auto-continue is disabled
+                if (!config.autoContinueEnabled) {
+                    metrics.record(sessionID, "idle.skipped.disabled");
+                    log("debug", "idle skipped: auto-continue disabled", { sessionID });
+                    return;
+                }
 
                 // Check if auto-continue is paused
                 if (meta.autoContinuePaused) {
                     const pauseAge = Date.now() - (meta.autoContinuePaused.timestamp || 0);
                     if (pauseAge < 30 * 60 * 1000) {
+                        metrics.record(sessionID, "idle.skipped.paused");
+                        log("debug", "idle skipped: auto-continue paused", { sessionID });
                         return;
                     }
                     meta.autoContinuePaused = null;
@@ -551,6 +601,15 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
 
                 // Check if awaiting guidance
                 if (meta.awaitingGuidance) {
+                    metrics.record(sessionID, "idle.skipped.guidance");
+                    log("debug", "idle skipped: awaiting guidance", { sessionID });
+                    return;
+                }
+
+                // Check if already complete
+                if (isComplete) {
+                    metrics.record(sessionID, "idle.skipped.complete");
+                    log("debug", "idle skipped: session already complete", { sessionID });
                     return;
                 }
 
@@ -560,7 +619,21 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     } catch (e) {
                         log("error", "Babysitter hook error", { error: e?.stack ?? e });
                     }
+                    metrics.record(sessionID, "idle.skipped.babysitter");
+                    log("debug", "idle skipped: deferred to task babysitter", { sessionID });
                     return;
+                }
+
+                // Apply cooldown if configured
+                if (config.cooldownMs > 0) {
+                    const lastIdleAt = meta.lastIdleAt || 0;
+                    const timeSinceLastIdle = Date.now() - lastIdleAt;
+                    if (timeSinceLastIdle < config.cooldownMs) {
+                        log("debug", "idle cooldown active", { sessionID, remaining: config.cooldownMs - timeSinceLastIdle });
+                        return;
+                    }
+                    meta.lastIdleAt = Date.now();
+                    sessionState.set(sessionID, meta);
                 }
 
                 let unfinishedTasks = [];
@@ -709,6 +782,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         const response = await client.session.messages({ sessionID }).catch(() => null);
                         const messages = response?.data;
                         if (!messages || messages.length === 0) {
+                            metrics.record(sessionID, "messages.empty");
                             meta.errorCount = (meta.errorCount || 0) + 1;
                             sessionState.set(sessionID, meta);
                             if (meta.errorCount >= config.circuitBreakerThreshold) {
@@ -720,7 +794,11 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         }
 
                         const lastMsg = messages[messages.length - 1];
-                        if (lastMsg.role !== "assistant") return;
+                        if (lastMsg.role !== "assistant") {
+                            metrics.record(sessionID, "last.msg.not.assistant");
+                            log("debug", "last message not from assistant", { sessionID, role: lastMsg.role });
+                            return;
+                        }
 
                         const contextText = getLastAssistantText(messages);
                         const prevText = meta.lastAssistantText || null;
@@ -761,18 +839,28 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
 
                         if (meta.continuationCount >= config.maxContinuations) {
                             metrics.record(sessionID, "escalation");
+                            metrics.record(sessionID, "prompt.escalation");
                             const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop);
+                            log("info", "sent escalation prompt", { sessionID, count: meta.continuationCount });
                             await sendPrompt(msg);
                         } else if (meta.continuationCount >= config.escalationThreshold) {
                             metrics.record(sessionID, "escalation");
+                            metrics.record(sessionID, "prompt.escalation");
                             const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop);
+                            log("info", "sent escalation prompt", { sessionID, count: meta.continuationCount });
                             await sendPrompt(msg);
                         } else if (inLoop) {
+                            metrics.record(sessionID, "prompt.loop.break");
+                            log("info", "sent loop-break prompt", { sessionID });
                             await sendPrompt(buildLoopBreakPrompt(contextText));
                         } else if (contextText && COMPLETION_KEYWORDS.test(contextText) && meta.continuationCount <= 2) {
+                            metrics.record(sessionID, "prompt.completion.nudge");
+                            log("info", "sent completion nudge", { sessionID });
                             await sendPrompt("You appear to have finished but did not call completionSignal. Please call it now.");
                         } else {
+                            metrics.record(sessionID, "prompt.continue");
                             const msg = buildContinuePrompt(meta.continuationCount, taskSummary, contextText);
+                            log("info", "sent continue prompt", { sessionID, count: meta.continuationCount });
                             await sendPrompt(msg);
                         }
                     } catch (e) {
@@ -788,9 +876,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     return;
                 }
 
-                if (!isComplete) {
-                    await handleIdle(false);
-                }
+                await handleIdle(false);
             }
 
             if (event.type === "session.deleted") {
