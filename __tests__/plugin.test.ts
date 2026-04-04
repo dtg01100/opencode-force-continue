@@ -247,6 +247,34 @@ describe('ContinuePlugin', () => {
 
       expect(sessionCompletionState.get('test-session-running')).toBe(false);
     });
+
+    it('should mark session complete when completionSignal is blocked or interrupted', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'test-session-blocked' });
+      await plugin.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-blocked', state: { status: 'completed', args: { status: 'blocked', reason: 'quota' } } }
+          }
+        }
+      });
+      expect(sessionCompletionState.get('test-session-blocked')).toBe(true);
+
+      await plugin['chat.message']({ sessionID: 'test-session-interrupted' });
+      await plugin.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-interrupted', state: { status: 'completed', args: { status: 'interrupted' } } }
+          }
+        }
+      });
+      expect(sessionCompletionState.get('test-session-interrupted')).toBe(true);
+    });
   });
 
   describe('session.idle', () => {
@@ -272,6 +300,116 @@ describe('ContinuePlugin', () => {
         sessionID: 'test-session-4',
         parts: [{ type: "text", text: "Continue" }]
       });
+    });
+
+    it('should send break-out prompt after 3 consecutive continuations', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'loop-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Stuck' }] }]
+      });
+
+      // 1st continue
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
+        parts: [{ type: 'text', text: 'Continue' }]
+      }));
+
+      // 2nd continue
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
+        parts: [{ type: 'text', text: 'Continue' }]
+      }));
+
+      // 3rd continue (break-out)
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
+        parts: [{ type: 'text', text: expect.stringContaining('3 times') }]
+      }));
+    });
+
+    it('should reset loop counter on new user message', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'reset-loop' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Work' }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-loop' } } }); // 1
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-loop' } } }); // 2
+      
+      await plugin['chat.message']({ sessionID: 'reset-loop' }); // User message resets counter
+      
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-loop' } } }); // 1 (not 3)
+      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
+        parts: [{ type: 'text', text: 'Continue' }]
+      }));
+    });
+
+    it('should prompt Continue with dynamic task summary when tasks are pending', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 'T1', title: 'Fix bug', status: 'in-progress' }]) }
+      });
+
+      await plugin['chat.message']({ sessionID: 'task-session' });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'task-session' } } });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        sessionID: 'task-session',
+        parts: [{ type: 'text', text: expect.stringContaining('- [in-progress] Fix bug') }]
+      });
+    });
+
+    it('should prompt Continue when backgroundManager.getTasksByParentSession returns object with data array', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { backgroundManager: { getTasksByParentSession: vi.fn(async () => ({ data: [{ id: 1, status: 'in-progress' }] })) } }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-tasks-data' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-tasks-data' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        sessionID: 'test-session-tasks-data',
+        parts: [{ type: 'text', text: expect.stringContaining('1 unfinished task(s)') }]
+      });
+    });
+
+    it('should treat status "complete" as finished and not prompt', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'complete' }]) }
+      });
+
+      await plugin['chat.message']({ sessionID: 'test-session-tasks-complete' });
+
+      await plugin.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'test-session-tasks-complete' }
+        }
+      });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
     });
 
     it('should not send Continue prompt when session is marked complete', async () => {
@@ -415,72 +553,6 @@ describe('ContinuePlugin', () => {
       const pluginWithHook = await createPlugin({ client: mockClient, hooks: { taskBabysitter: hook } });
       await pluginWithHook.event({ event: { type: 'session.idle', properties: { sessionID: 'test-session-babysitter' } } });
       expect(hook.event).toHaveBeenCalled();
-    });
-
-    it('should prompt Continue when getTasksByParentSession reports incomplete tasks', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
-      const plugin = await createPlugin({
-        client: mockClient,
-        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'in-progress' }, { id: 2, status: 'done' }]) }
-      });
-
-      await plugin['chat.message']({ sessionID: 'test-session-tasks' });
-
-      await plugin.event({
-        event: {
-          type: 'session.idle',
-          properties: { sessionID: 'test-session-tasks' }
-        }
-      });
-
-      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        sessionID: 'test-session-tasks',
-        parts: [{ type: 'text', text: 'Continue — 1 unfinished task(s) remain. Continue working?' }]
-      });
-    });
-
-    it('should prompt Continue when backgroundManager.getTasksByParentSession returns object with data array', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
-      const plugin = await createPlugin({
-        client: mockClient,
-        hooks: { backgroundManager: { getTasksByParentSession: vi.fn(async () => ({ data: [{ id: 1, status: 'in-progress' }] })) } }
-      });
-
-      await plugin['chat.message']({ sessionID: 'test-session-tasks-data' });
-
-      await plugin.event({
-        event: {
-          type: 'session.idle',
-          properties: { sessionID: 'test-session-tasks-data' }
-        }
-      });
-
-      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        sessionID: 'test-session-tasks-data',
-        parts: [{ type: 'text', text: 'Continue — 1 unfinished task(s) remain. Continue working?' }]
-      });
-    });
-
-    it('should treat status "complete" as finished and not prompt', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
-      const plugin = await createPlugin({
-        client: mockClient,
-        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'complete' }]) }
-      });
-
-      await plugin['chat.message']({ sessionID: 'test-session-tasks-complete' });
-
-      await plugin.event({
-        event: {
-          type: 'session.idle',
-          properties: { sessionID: 'test-session-tasks-complete' }
-        }
-      });
-
-      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
     });
   });
 

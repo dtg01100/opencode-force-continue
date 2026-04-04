@@ -98,9 +98,14 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
         returnObj.tool = {
             completionSignal: tool({
-                description: "Call this tool when you are genuinely finished with the task and ready for user input. Do NOT stop until you have called this.",
-                args: {},
-                execute: async () => {
+                description: "Call this tool when you are finished with the task or ready for user input. You can also signal if you are blocked.",
+                args: {
+                    status: { type: "string", optional: true, description: "Status of the task. 'completed' (default), 'blocked', or 'interrupted'." },
+                    reason: { type: "string", optional: true, description: "Reason for the status (e.g. if blocked)." },
+                },
+                execute: async ({ status = "completed", reason }) => {
+                    if (status === "blocked") return `Agent is blocked: ${reason || "No reason provided"}. Stopping auto-continue.`;
+                    if (status === "interrupted") return `Agent interrupted: ${reason || "No reason provided"}. Stopping auto-continue.`;
                     return "Ready for user.";
                 },
             }),
@@ -115,7 +120,14 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
         returnObj["chat.message"] = async ({ sessionID }) => {
             if (!isEnabled(sessionID)) return;
-            try { updateLastSeen(sessionID); } catch (e) { /* best-effort */ }
+            try {
+                const meta = sessionState.get(sessionID) || {};
+                meta.enabled = true;
+                meta.lastSeen = Date.now();
+                // Reset loop counter on new user message
+                meta.continuationCount = 0;
+                sessionState.set(sessionID, meta);
+            } catch (e) { /* best-effort */ }
             sessionCompletionState.set(sessionID, false);
         };
 
@@ -127,6 +139,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
             system.push(
                 "IMPORTANT: You must call the 'completionSignal' tool when you are finished. " +
                 "Do not stop or ask for user input until you have called this tool. " +
+                "If you are stuck, blocked, or need user input, call 'completionSignal' with status='blocked' or status='interrupted' and provide a reason. " +
                 "If you stop without calling it, you will be forced to continue."
             );
         };
@@ -152,12 +165,17 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
 
             if (event.type === "message.part.updated") {
                 if (part?.type === "tool" && part.tool === "completionSignal" && part.state?.status === "completed") {
-                    sessionCompletionState.set(sessionID, true);
+                    const args = part.state?.args || {};
+                    const status = (args.status || "completed").toLowerCase();
+                    if (status === "completed" || status === "blocked" || status === "interrupted") {
+                        sessionCompletionState.set(sessionID, true);
+                    }
                 }
             }
 
             if (event.type === "session.idle") {
                 const isComplete = sessionCompletionState.get(sessionID);
+                const meta = sessionState.get(sessionID) || { continuationCount: 0 };
 
                 if (ctx?.hooks?.taskBabysitter?.event) {
                     try {
@@ -170,7 +188,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     return;
                 }
 
-                let unfinishedCount = 0;
+                let unfinishedTasks = [];
                 try {
                     const getTasksCandidates = [
                         ctx?.hooks?.getTasksByParentSession,
@@ -182,13 +200,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                     for (const fn of getTasksCandidates) {
                         if (typeof fn !== "function") continue;
                         try {
-                            const tasks = await fn(sessionID);
-                            if (Array.isArray(tasks)) {
-                                unfinishedCount = tasks.filter(t => t && t.status && !isTaskDone(t.status)).length;
-                                break;
-                            }
-                            if (tasks && Array.isArray(tasks.data)) {
-                                unfinishedCount = tasks.data.filter(t => t && t.status && !isTaskDone(t.status)).length;
+                            const result = await fn(sessionID);
+                            const tasks = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : []);
+                            if (tasks.length > 0) {
+                                unfinishedTasks = tasks.filter(t => t && t.status && !isTaskDone(t.status));
                                 break;
                             }
                         } catch {}
@@ -199,9 +214,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                         : console.error)("Failed to query tasks:", e?.stack ?? e);
                 }
 
-                if (unfinishedCount > 0) {
+                if (unfinishedTasks.length > 0) {
                     try {
-                        const msg = `Continue — ${unfinishedCount} unfinished task(s) remain. Continue working?`;
+                        const taskSummary = unfinishedTasks.map(t => `- [${t.status}] ${t.title || t.id}`).join("\n");
+                        const msg = `Continue — ${unfinishedTasks.length} unfinished task(s) remain:\n${taskSummary}\n\nPlease continue working or call 'completionSignal' if you are blocked.`;
                         await client.session.promptAsync({
                             sessionID,
                             parts: [{ type: "text", text: msg }]
@@ -221,10 +237,20 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                         if (messages && messages.length > 0) {
                             const lastMsg = messages[messages.length - 1];
                             if (lastMsg.role === "assistant") {
-                                await client.session.promptAsync({
-                                    sessionID,
-                                    parts: [{ type: "text", text: "Continue" }]
-                                });
+                                meta.continuationCount = (meta.continuationCount || 0) + 1;
+                                sessionState.set(sessionID, meta);
+
+                                if (meta.continuationCount >= 3) {
+                                    await client.session.promptAsync({
+                                        sessionID,
+                                        parts: [{ type: "text", text: "You have been forced to continue 3 times without signaling completion. Are you stuck or in a loop? If so, please explain or call 'completionSignal' with status='blocked'." }]
+                                    });
+                                } else {
+                                    await client.session.promptAsync({
+                                        sessionID,
+                                        parts: [{ type: "text", text: "Continue" }]
+                                    });
+                                }
                             }
                         }
                     } catch (e) {
