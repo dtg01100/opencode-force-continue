@@ -15,6 +15,7 @@ const DEFAULT_CONFIG = {
     enableFileTracking: true,
     enableTaskTracking: true,
     enableCompletionSummary: true,
+    logToStdout: false,
     ignoreTools: ["read", "glob", "grep"],
     dangerousCommands: ["rm -rf /", "rm -rf ~", "mkfs", "dd if=/dev/zero", "> /dev/sda"],
 };
@@ -31,6 +32,7 @@ function resolveConfig() {
     if (process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== undefined) envConfig.enableFileTracking = process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== undefined) envConfig.enableTaskTracking = process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== undefined) envConfig.enableCompletionSummary = process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== "false";
+    if (process.env.FORCE_CONTINUE_LOG_TO_STDOUT !== undefined) envConfig.logToStdout = process.env.FORCE_CONTINUE_LOG_TO_STDOUT !== "false";
 
     let fileConfig = {};
     const configPaths = [
@@ -228,7 +230,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
             if (client?.app?.log) {
                 client.app.log({ service: "force-continue", level, message, extra }).catch(() => {});
             }
-            if (logger && typeof logger[level] === "function") {
+            if (config.logToStdout && logger && typeof logger[level] === "function") {
                 logger[level](message, extra);
             }
         };
@@ -261,7 +263,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         result.probe = { ok: false, error: 'promptAsync not available on client.session' };
                     } else {
                         try {
-                            await client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: promptText || 'Plugin validation probe' }] });
+                            await client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: 'text', text: promptText || 'Plugin validation probe' }] } });
                             result.probe = { ok: true };
                         } catch (e) {
                             result.ok = false;
@@ -273,7 +275,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 result.ok = false;
                 result.error = String(e);
             }
-            (logger && typeof logger.info === 'function' ? logger.info : console.log)('validate result', result);
+            if (config.logToStdout) (logger && typeof logger.info === 'function' ? logger.info : console.log)('validate result', result);
             return result;
         };
 
@@ -667,8 +669,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 const getLastAssistantText = (messages) => {
                     for (let i = messages.length - 1; i >= 0; i--) {
                         const msg = messages[i];
-                        if (msg.role === "assistant" && msg.parts) {
-                            const textParts = msg.parts.filter(p => p && p.type === "text");
+                        const role = msg.role || msg.info?.role;
+                        const parts = msg.parts || msg.info?.parts;
+                        if (role === "assistant" && parts) {
+                            const textParts = parts.filter(p => p && p.type === "text");
                             if (textParts.length > 0) {
                                 const text = textParts.map(p => p.text).join("\n").trim();
                                 if (text.length > 0) {
@@ -770,8 +774,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
 
                 const sendPrompt = async (text) => {
                     await client.session.promptAsync({
-                        sessionID,
-                        parts: [{ type: "text", text }]
+                        path: { id: sessionID },
+                        body: { parts: [{ type: "text", text }] }
                     });
                 };
 
@@ -779,7 +783,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     if (!config.autoContinueEnabled) return;
 
                     try {
-                        const response = await client.session.messages({ sessionID }).catch(() => null);
+                        const response = await client.session.messages({ path: { id: sessionID } }).catch(() => null);
                         const messages = response?.data;
                         if (!messages || messages.length === 0) {
                             metrics.record(sessionID, "messages.empty");
@@ -794,9 +798,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         }
 
                         const lastMsg = messages[messages.length - 1];
-                        if (lastMsg.role !== "assistant") {
+                        const lastMsgRole = lastMsg.role || lastMsg.info?.role;
+                        if (lastMsgRole !== "assistant") {
                             metrics.record(sessionID, "last.msg.not.assistant");
-                            log("debug", "last message not from assistant", { sessionID, role: lastMsg.role });
+                            log("debug", "last message not from assistant", { sessionID, role: lastMsgRole });
                             return;
                         }
 

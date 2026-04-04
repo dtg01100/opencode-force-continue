@@ -342,8 +342,8 @@ describe('ContinuePlugin', () => {
       });
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        sessionID: 'test-session-4',
-        parts: [{ type: "text", text: expect.stringContaining("Continue working on your current task") }]
+        path: { id: 'test-session-4' },
+        body: { parts: [{ type: "text", text: expect.stringContaining("Continue working on your current task") }] }
       });
     });
 
@@ -360,20 +360,20 @@ describe('ContinuePlugin', () => {
       // 1st continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
+        body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
       }));
 
       // 2nd continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
+        body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
       }));
 
       // 3rd continue — forces structured plan: list remaining steps then execute
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('3 rounds');
-      expect(lastCall.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('3 rounds');
+      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
     });
 
     it('should escalate further at 4 continuations', async () => {
@@ -391,8 +391,8 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('4 times');
-      expect(lastCall.parts[0].text).toContain('fundamentally different strategy');
+      expect(lastCall.body.parts[0].text).toContain('4 times');
+      expect(lastCall.body.parts[0].text).toContain('fundamentally different strategy');
     });
 
     it('should hard cap at 5 continuations', async () => {
@@ -410,9 +410,9 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
-      expect(lastCall.parts[0].text).toContain('5/5');
-      expect(lastCall.parts[0].text).toContain('STOP');
+      expect(lastCall.body.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
+      expect(lastCall.body.parts[0].text).toContain('5/5');
+      expect(lastCall.body.parts[0].text).toContain('STOP');
     });
 
     it('should reset loop counter on new user message', async () => {
@@ -432,7 +432,7 @@ describe('ContinuePlugin', () => {
       
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-loop' } } }); // 1 (not 3)
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
+        body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
       }));
     });
 
@@ -458,8 +458,8 @@ describe('ContinuePlugin', () => {
 
       // Should be a normal continue prompt, not escalation
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('Continue working');
-      expect(lastCall.parts[0].text).not.toContain('rounds');
+      expect(lastCall.body.parts[0].text).toContain('Continue working');
+      expect(lastCall.body.parts[0].text).not.toContain('rounds');
     });
 
     it('should send "did you forget?" prompt when completion-like language detected without signal', async () => {
@@ -475,8 +475,8 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'forgot-signal' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('did not call completionSignal');
-      expect(lastCall.parts[0].text).toContain('call it now');
+      expect(lastCall.body.parts[0].text).toContain('did not call completionSignal');
+      expect(lastCall.body.parts[0].text).toContain('call it now');
     });
 
     it('should warn about loop when response repeats content from 2+ turns ago', async () => {
@@ -509,8 +509,8 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('WARNING');
-      expect(lastCall.parts[0].text).toContain('repeat');
+      expect(lastCall.body.parts[0].text).toContain('WARNING');
+      expect(lastCall.body.parts[0].text).toContain('repeat');
     });
 
     it('should force structured plan at escalation count >= 3', async () => {
@@ -531,7 +531,7 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
     });
 
     it('should return "You may now stop" after completionSignal with no unfinished tasks', async () => {
@@ -560,8 +560,8 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'task-session' } } });
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        sessionID: 'task-session',
-        parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }]
+        path: { id: 'task-session' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }] }
       });
     });
 
@@ -586,8 +586,8 @@ describe('ContinuePlugin', () => {
       });
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        sessionID: 'test-session-tasks-data',
-        parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }]
+        path: { id: 'test-session-tasks-data' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }] }
       });
     });
 
@@ -837,8 +837,8 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
-      expect(lastCall.parts[0].text).toContain('3/3');
+      expect(lastCall.body.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
+      expect(lastCall.body.parts[0].text).toContain('3/3');
     });
 
     it('should respect escalationThreshold from options', async () => {
@@ -855,8 +855,8 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).toContain('2 rounds');
-      expect(lastCall.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('2 rounds');
+      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
     });
 
     it('should disable auto-continue when autoContinueEnabled is false', async () => {
@@ -900,8 +900,8 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'no-loop-session' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.parts[0].text).not.toContain('WARNING');
-      expect(lastCall.parts[0].text).not.toContain('repeat');
+      expect(lastCall.body.parts[0].text).not.toContain('WARNING');
+      expect(lastCall.body.parts[0].text).not.toContain('repeat');
     });
   });
 
