@@ -248,7 +248,7 @@ describe('ContinuePlugin', () => {
       const toolDef = plugin.tool.completionSignal;
       const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'complete-session' } as any);
 
-      expect(result).toBe('Task completed.');
+      expect(result).toBe('Task completed. You may now stop.');
       expect(sessionCompletionState.get('complete-session')).toBe(true);
     });
 
@@ -339,11 +339,11 @@ describe('ContinuePlugin', () => {
         parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
       }));
 
-      // 3rd continue — diagnostic prompt asking to assess and try different approach
+      // 3rd continue — forces structured plan: list remaining steps then execute
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
       expect(lastCall.parts[0].text).toContain('3 rounds');
-      expect(lastCall.parts[0].text).toContain('different approach');
+      expect(lastCall.parts[0].text).toContain('List the remaining steps');
     });
 
     it('should escalate further at 4 continuations', async () => {
@@ -430,6 +430,89 @@ describe('ContinuePlugin', () => {
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
       expect(lastCall.parts[0].text).toContain('Continue working');
       expect(lastCall.parts[0].text).not.toContain('rounds');
+    });
+
+    it('should send "did you forget?" prompt when completion-like language detected without signal', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'forgot-signal' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: "All done! That's everything." }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'forgot-signal' } } });
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('did not call completionSignal');
+      expect(lastCall.parts[0].text).toContain('call it now');
+    });
+
+    it('should warn about loop when response repeats content from 2+ turns ago', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'loop-detect-session' });
+
+      // Build up response history
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'First response about fixing the bug' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Second response trying something else entirely' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Third response with yet another different approach' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
+
+      // Now repeat the first response — should trigger loop detection
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'First response about fixing the bug' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('WARNING');
+      expect(lastCall.parts[0].text).toContain('repeat');
+    });
+
+    it('should force structured plan at escalation count >= 3', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'plan-session' });
+
+      // Use identical responses — no progress detected, no loop (need 2+ history entries for loop)
+      // so counter increments to 3 normally
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working on the task' }] }]
+      });
+
+      for (let i = 0; i < 3; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'plan-session' } } });
+      }
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('List the remaining steps');
+    });
+
+    it('should return "You may now stop" after completionSignal with no unfinished tasks', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.completionSignal;
+      const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'done-session' } as any);
+
+      expect(result).toBe('Task completed. You may now stop.');
     });
 
     it('should prompt Continue with dynamic task summary when tasks are pending', async () => {
