@@ -395,7 +395,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 execute: async ({ reason, estimatedTime }, toolCtx) => {
                     const sessionID = toolCtx?.sessionID;
                     if (sessionID) {
-                        effectiveCompletionState.set(sessionID, true);
                         const meta = sessionState.get(sessionID) || {};
                         meta.autoContinuePaused = { reason, estimatedTime, timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
@@ -442,14 +441,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 meta.awaitingGuidance = null;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
-            // Only reset completion state if enough time has passed since completionSignal
-            // or if there's evidence of genuine user interaction (not auto-continue nudges)
-            const msgMeta = sessionState.get(sessionID) || {};
-            const completionSignalAt = msgMeta.completionSignalAt || 0;
-            const timeSinceCompletion = Date.now() - completionSignalAt;
-            if (completionSignalAt === 0 || timeSinceCompletion > 5000) {
-                effectiveCompletionState.set(sessionID, false);
-            }
         };
 
         // ─── System Prompt Transform ────────────────────────────────────────

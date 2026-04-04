@@ -50,13 +50,16 @@ The plugin is intentionally simple and unobtrusive: once installed it runs autom
 
 Behavior summary:
 
-1. Injects a system message asking the model to call `completionSignal` when a task is complete.
-2. Tracks per-session state in-memory and marks sessions incomplete when new user messages arrive.
+1. Injects a system message asking the model to call `completionSignal` when a task is complete, treating it as a hard termination.
+2. Tracks per-session state in-memory. Completion state is set by `session.created` (incomplete) and `completionSignal` (complete), but `chat.message` does not reset it.
 3. If a session becomes idle without a `completionSignal`, the plugin will send a short "Continue" prompt to encourage the model to finish.
 4. If available, the plugin will consult task hooks (a babysitter or task-query hook) before auto-continuing to avoid interrupting legitimate pauses.
-5. When the model calls `completionSignal`, the plugin stops auto-continuing for that session.
+5. When the model calls `completionSignal`, the plugin stops auto-continuing for that session. Duplicate calls are rejected.
 6. Escalates prompts progressively if the model keeps stopping without signaling completion.
 7. Detects loops in model responses and tool calls, and breaks them with targeted prompts.
+8. Injects a system message into completed sessions via `experimental.chat.messages.transform` to prevent the model from responding to auto-continue nudges after completion.
+9. Applies an optional cooldown (`cooldownMs`) between idle events to avoid rapid-fire prompts.
+10. Skips auto-continue when paused via `pauseAutoContinue`, awaiting guidance via `requestGuidance`, or when auto-continue is disabled.
 
 ## Configuration
 
@@ -87,6 +90,7 @@ Create `.opencode/force-continue.json` or `force-continue.config.json` in your p
   "enableLoopDetection": true,
   "enableToolLoopDetection": true,
   "autoContinueEnabled": true,
+  "cooldownMs": 0,
   "circuitBreakerThreshold": 10,
   "enableFileTracking": true,
   "enableTaskTracking": true,
@@ -128,21 +132,24 @@ Key components (in `force-continue.server.js`):
   - `pauseAutoContinue` — temporarily suspends auto-continue prompts while the model plans.
   - `healthCheck` — returns plugin metrics, session counts, and configuration status.
 - Message & event handlers:
-  - `chat.message` — updates per-session lastSeen and resets continuation counters when a user message arrives.
-  - `experimental.chat.system.transform` — injects a system instruction telling the model to call `completionSignal` when finished.
+  - `chat.message` — updates per-session lastSeen, resets continuation counters, and clears paused/guidance state. Does NOT reset completion state — `completionSignal` is a hard termination.
+  - `experimental.chat.system.transform` — injects a system instruction telling the model to call `completionSignal` when finished, with explicit instructions to treat it as a hard termination.
+  - `experimental.chat.messages.transform` — injects a system message into completed sessions instructing the model to remain silent and not respond to further prompts.
   - `tool.execute.before` — blocks dangerous commands during auto-continue sessions.
   - `tool.execute.after` — tracks tool call history, file modifications, and detects tool call loops.
-  - `event` — the main event handler that reacts to `session.created`, `message.part.updated` (used to detect `completionSignal` tool calls), `session.idle`, `session.deleted`, and `file.edited` events.
+  - `event` — the main event handler that reacts to `session.created`, `message.part.updated` (used to detect `completionSignal` tool calls and canceled parts), `session.idle`, `session.deleted`, and `file.edited` events.
   - `experimental.session.compacting` — injects continuation state into the compaction context so the model retains awareness across context window truncation.
 
 Event flow (session.idle handling simplified):
 
-1. On `session.idle`, the handler checks whether the session already has a recorded completion via `sessionCompletionState`.
-2. If task-related hooks are available (task babysitter), the plugin defers to them.
-3. The plugin attempts to query unfinished tasks using several hook candidates (`getTasksByParentSession` from hooks or context). If unfinished tasks are found, it sends a prompt listing them and asks the model to continue or call `completionSignal`.
-4. If no tasks are found and the session is not marked complete, it fetches recent messages. If the last message role is `assistant`, it increments a `continuationCount` and sends either a plain `Continue` prompt or a stronger nudge when `continuationCount >= escalationThreshold` (asks whether the model is stuck and requests `completionSignal` if appropriate).
-5. When a `message.part.updated` event shows a `completionSignal` tool call (with `status` such as `completed`/`blocked`/`interrupted`), the plugin marks the session complete and stops auto-continuing.
-6. On `session.deleted`, session entries are cleaned from in-memory maps.
+1. On `session.idle`, the handler first checks if auto-continue is disabled, paused, awaiting guidance, or already complete — skipping early if any apply.
+2. If a cooldown is configured (`cooldownMs > 0`), the handler skips if insufficient time has passed since the last idle event.
+3. If task-related hooks are available (task babysitter), the plugin defers to them.
+4. The plugin attempts to query unfinished tasks using several hook candidates (`getTasksByParentSession` from hooks or context). If unfinished tasks are found, it sends a prompt listing them and asks the model to continue or call `completionSignal`.
+5. If no tasks are found, it fetches recent messages. If the last message role is `assistant`, it increments a `continuationCount` and sends either a plain `Continue` prompt, a completion nudge (if completion keywords detected), a loop-break prompt (if loop detected), or escalation prompts when thresholds are exceeded.
+6. When a `message.part.updated` event shows a `completionSignal` tool call (with `status` such as `completed`/`blocked`/`interrupted`), the plugin marks the session complete and stops auto-continuing. Duplicate `completionSignal` calls are rejected.
+7. When a `message.part.updated` event shows a `canceled`/`cancelled` status, the session is marked complete to suppress further nudges.
+8. On `session.deleted`, session entries are cleaned from in-memory maps.
 
 Helpers and extension points:
 
@@ -150,7 +157,7 @@ Helpers and extension points:
 - `resolveConfig()` — resolves configuration from defaults, config file, and environment variables.
 - `createFileStore(baseDir)` — creates a file-based persistence store for cross-process state.
 - `createHybridStore(inMemoryMap, fileStore)` — creates a hybrid store that reads from memory first, falling back to file storage.
-- `createMetricsTracker()` — creates a metrics tracker for observability.
+- `createMetricsTracker()` — creates a metrics tracker for observability. Tracks idle events, prompt types (continue, escalation, loop-break, completion nudge), circuit breaker trips, and per-session error counts.
 - Exported helpers for operational or debug use: `updateLastSeen`, `readState`.
 - To add cross-process persistence, replace the in-memory `sessionState` Map or adapt the plugin to call an external store inside the helper functions.
 - If you have a background task manager or a task babysitter hook, connect it via `ctx.hooks` so the plugin can defer to those systems instead of auto-continuing.
@@ -160,12 +167,13 @@ Debugging tips:
 - Use the `validate` tool in `probe` mode to ensure `promptAsync` is available and that a session accepts prompts.
 - Use the `healthCheck` tool with `detail: 'full'` to get a complete snapshot of plugin state, metrics, and configuration.
 - Inspect `readState()` (exported) to get a snapshot of tracked sessions and metrics.
+- Set `FORCE_CONTINUE_LOG_TO_STDOUT=true` to log plugin activity to stdout in addition to OpenCode's logger.
 
 ## Tools Reference
 
 ### completionSignal
 
-Call when work is complete, blocked, or interrupted.
+Call when work is complete, blocked, or interrupted. Duplicate calls are rejected — call this exactly once when finished.
 
 ```
 completionSignal(status='completed', reason?)

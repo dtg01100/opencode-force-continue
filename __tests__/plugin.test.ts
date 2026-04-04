@@ -68,9 +68,10 @@ describe('ContinuePlugin', () => {
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
 
-      await plugin['chat.message']({ sessionID: 'test-session-1' });
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-1' } } } });
+      expect(sessionCompletionState.get('test-session-1')).toBe(false);
 
-      expect(sessionCompletionState.has('test-session-1')).toBe(true);
+      await plugin['chat.message']({ sessionID: 'test-session-1' });
       expect(sessionCompletionState.get('test-session-1')).toBe(false);
     });
 
@@ -125,8 +126,10 @@ describe('ContinuePlugin', () => {
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
 
-      await plugin['chat.message']({ sessionID: 'test-session-2' });
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-2' } } } });
+      expect(sessionCompletionState.get('test-session-2')).toBe(false);
 
+      await plugin['chat.message']({ sessionID: 'test-session-2' });
       expect(sessionCompletionState.get('test-session-2')).toBe(false);
     });
 
@@ -162,6 +165,9 @@ describe('ContinuePlugin', () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-3' } } } });
+      expect(sessionCompletionState.get('test-session-3')).toBe(false);
 
       await plugin['chat.message']({ sessionID: 'test-session-3' });
       expect(sessionCompletionState.get('test-session-3')).toBe(false);
@@ -203,6 +209,9 @@ describe('ContinuePlugin', () => {
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
 
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-pending' } } } });
+      expect(sessionCompletionState.get('test-session-pending')).toBe(false);
+
       await plugin['chat.message']({ sessionID: 'test-session-pending' });
       expect(sessionCompletionState.get('test-session-pending')).toBe(false);
 
@@ -223,6 +232,9 @@ describe('ContinuePlugin', () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-running' } } } });
+      expect(sessionCompletionState.get('test-session-running')).toBe(false);
 
       await plugin['chat.message']({ sessionID: 'test-session-running' });
       expect(sessionCompletionState.get('test-session-running')).toBe(false);
@@ -974,7 +986,7 @@ describe('ContinuePlugin', () => {
       );
 
       expect(result).toContain('Auto-continue paused');
-      expect(sessionCompletionState.get('pause-session')).toBe(true);
+      expect(sessionCompletionState.get('pause-session')).toBeFalsy();
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Thinking' }] }]
