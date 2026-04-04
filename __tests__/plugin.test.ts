@@ -1,77 +1,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@opencode-ai/plugin', () => ({
-  tool: vi.fn(() => ({ type: 'tool' })),
+  tool: Object.assign(vi.fn((def) => ({ type: 'tool', ...def })), {
+    schema: {
+      string: () => ({ optional: () => ({ describe: () => ({}) }) }),
+      number: () => ({ optional: () => ({ describe: () => ({}) }) }),
+    },
+  }),
 }));
 
-// ─── flags.js ───────────────────────────────────────────────────────────────
+// ─── module-level helpers ─────────────────────────────────────────────────────
 
-describe('flags.js', () => {
+describe('module-level helpers', () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  describe('isEnabled', () => {
-    it('should return true for any non-empty session (always enabled)', async () => {
-      const { isEnabled } = await import('../force-continue.server.js');
-      expect(isEnabled('test-session')).toBe(true);
-    });
-
-    it('should return false for null/undefined/empty sessionID', async () => {
-      const { isEnabled } = await import('../force-continue.server.js');
-      expect(isEnabled(null as any)).toBe(false);
-      expect(isEnabled(undefined as any)).toBe(false);
-      expect(isEnabled('' as any)).toBe(false);
-    });
-  });
-
-  describe('nextSession', () => {
-    it('should default to false', async () => {
-      const { isNextSessionEnabled } = await import('../force-continue.server.js');
-      expect(isNextSessionEnabled()).toBe(false);
-    });
-
-    it('should enable and disable nextSession', async () => {
-      const { isNextSessionEnabled, setNextSessionEnabled } = await import('../force-continue.server.js');
-      setNextSessionEnabled(true);
-      expect(isNextSessionEnabled()).toBe(true);
-      setNextSessionEnabled(false);
-      expect(isNextSessionEnabled()).toBe(false);
-    });
-
-    it('should consume nextSession atomically', async () => {
-      const { setNextSessionEnabled, consumeNextSessionFlag, isNextSessionEnabled } = await import('../force-continue.server.js');
-      setNextSessionEnabled(true);
-      expect(consumeNextSessionFlag()).toBe(true);
-      expect(isNextSessionEnabled()).toBe(false);
-      expect(consumeNextSessionFlag()).toBe(false);
-    });
-
-    it('should return false when consuming empty nextSession', async () => {
-      const { consumeNextSessionFlag } = await import('../force-continue.server.js');
-      expect(consumeNextSessionFlag()).toBe(false);
-    });
-  });
-
-  describe('in-memory state behavior', () => {
+describe('in-memory state behavior', () => {
     it('should return defaults when fresh', async () => {
-      const { isEnabled, isNextSessionEnabled, readState } = await import('../force-continue.server.js');
-      expect(isEnabled('any-session')).toBe(true);
-      expect(isNextSessionEnabled()).toBe(false);
-      expect(readState()).toEqual({ sessions: {}, nextSession: false });
+      const { readState } = await import('../force-continue.server.js');
+      expect(readState()).toEqual({ sessions: {} });
     });
 
     it('should read state values after updates', async () => {
       const { updateLastSeen, readState } = await import('../force-continue.server.js');
       updateLastSeen('test-session');
       const state = readState();
-      expect(state.sessions['test-session'].enabled).toBe(true);
+      expect(state.sessions['test-session'].lastSeen).toBeDefined();
     });
 
     it('should not use filesystem for state', async () => {
-      const { updateLastSeen, isNextSessionEnabled } = await import('../force-continue.server.js');
+      const { updateLastSeen, readState } = await import('../force-continue.server.js');
       updateLastSeen('test-session');
-      expect(isNextSessionEnabled()).toBe(false);
+      const state = readState();
+      expect(state.sessions['test-session'].lastSeen).toBeDefined();
     });
   });
 });
@@ -95,8 +57,8 @@ describe('ContinuePlugin', () => {
     mockCtx = { client: mockClient };
   });
 
-  describe('disabled behavior', () => {
-    it('should track session as incomplete on chat.message even when not manually enabled', async () => {
+  describe('session tracking', () => {
+    it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
@@ -107,7 +69,7 @@ describe('ContinuePlugin', () => {
       expect(sessionCompletionState.get('test-session-1')).toBe(false);
     });
 
-    it('should send Continue prompt on idle even without manual enablement', async () => {
+    it('should send Continue prompt on idle', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
@@ -127,7 +89,7 @@ describe('ContinuePlugin', () => {
     });
   });
 
-  describe('enabled behavior', () => {
+  describe('always-on behavior', () => {
     it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
@@ -152,7 +114,7 @@ describe('ContinuePlugin', () => {
       expect(system[0]).toContain('completionSignal');
     });
 
-    it('should inject system message even when not manually enabled (always-on)', async () => {
+    it('should inject system message for any session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
@@ -277,6 +239,59 @@ describe('ContinuePlugin', () => {
     });
   });
 
+  describe('completionSignal tool execute', () => {
+    it('should return "Task completed." when task completed and no unfinished tasks', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.completionSignal;
+      const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'complete-session' } as any);
+
+      expect(result).toBe('Task completed.');
+      expect(sessionCompletionState.get('complete-session')).toBe(true);
+    });
+
+    it('should NOT abort session when unfinished tasks remain', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin({
+        client: mockClient,
+        hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 'T1', title: 'Fix bug', status: 'in-progress' }]) }
+      });
+
+      const toolDef = plugin.tool.completionSignal;
+      const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'task-session' } as any);
+
+      expect(result).toBe('Ready for user.');
+      expect(sessionCompletionState.get('task-session')).toBe(true);
+    });
+
+    it('should NOT abort session when status is blocked', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.completionSignal;
+      const result = await toolDef.execute({ status: 'blocked', reason: 'quota exceeded' }, { sessionID: 'blocked-session' } as any);
+
+      expect(result).toBe('Agent is blocked: quota exceeded. Stopping auto-continue.');
+      expect(sessionCompletionState.get('blocked-session')).toBe(true);
+    });
+
+    it('should NOT abort session when status is interrupted', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.completionSignal;
+      const result = await toolDef.execute({ status: 'interrupted', reason: 'user stopped' }, { sessionID: 'interrupted-session' } as any);
+
+      expect(result).toBe('Agent interrupted: user stopped. Stopping auto-continue.');
+      expect(sessionCompletionState.get('interrupted-session')).toBe(true);
+    });
+  });
+
   describe('session.idle', () => {
     it('should send Continue prompt when idle without completion', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -298,7 +313,7 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         sessionID: 'test-session-4',
-        parts: [{ type: "text", text: "Continue" }]
+        parts: [{ type: "text", text: expect.stringContaining("Continue working on your current task") }]
       });
     });
 
@@ -315,20 +330,59 @@ describe('ContinuePlugin', () => {
       // 1st continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: 'Continue' }]
+        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
       }));
 
       // 2nd continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: 'Continue' }]
+        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
       }));
 
-      // 3rd continue (break-out)
+      // 3rd continue — diagnostic prompt asking to assess and try different approach
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
-      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: expect.stringContaining('3 times') }]
-      }));
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('3 rounds');
+      expect(lastCall.parts[0].text).toContain('different approach');
+    });
+
+    it('should escalate further at 4 continuations', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'escalate-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Still stuck' }] }]
+      });
+
+      for (let i = 0; i < 4; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'escalate-session' } } });
+      }
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('4 times');
+      expect(lastCall.parts[0].text).toContain('fundamentally different strategy');
+    });
+
+    it('should hard cap at 5 continuations', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'cap-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', content: [{ type: 'text', text: 'No progress' }] }]
+      });
+
+      for (let i = 0; i < 5; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'cap-session' } } });
+      }
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
+      expect(lastCall.parts[0].text).toContain('5/5');
+      expect(lastCall.parts[0].text).toContain('STOP');
     });
 
     it('should reset loop counter on new user message', async () => {
@@ -348,13 +402,42 @@ describe('ContinuePlugin', () => {
       
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-loop' } } }); // 1 (not 3)
       expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        parts: [{ type: 'text', text: 'Continue' }]
+        parts: [{ type: 'text', text: expect.stringContaining('Continue working') }]
       }));
+    });
+
+    it('should reset continuation counter when progress is detected', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'progress-session' });
+
+      // First two idle events with same response — counter goes to 2
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working on step 1' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'progress-session' } } }); // count=1
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'progress-session' } } }); // count=2
+
+      // Now the model made progress — different response
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Completed step 1 and moved to step 2 with new approach' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'progress-session' } } }); // should reset to 1
+
+      // Should be a normal continue prompt, not escalation
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('Continue working');
+      expect(lastCall.parts[0].text).not.toContain('rounds');
     });
 
     it('should prompt Continue with dynamic task summary when tasks are pending', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working on it' }] }]
+      });
       const plugin = await createPlugin({
         client: mockClient,
         hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 'T1', title: 'Fix bug', status: 'in-progress' }]) }
@@ -365,13 +448,16 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         sessionID: 'task-session',
-        parts: [{ type: 'text', text: expect.stringContaining('- [in-progress] Fix bug') }]
+        parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }]
       });
     });
 
     it('should prompt Continue when backgroundManager.getTasksByParentSession returns object with data array', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Processing' }] }]
+      });
       const plugin = await createPlugin({
         client: mockClient,
         hooks: { backgroundManager: { getTasksByParentSession: vi.fn(async () => ({ data: [{ id: 1, status: 'in-progress' }] })) } }
@@ -388,7 +474,7 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         sessionID: 'test-session-tasks-data',
-        parts: [{ type: 'text', text: expect.stringContaining('1 unfinished task(s)') }]
+        parts: [{ type: 'text', text: expect.stringContaining('Continue working —') }]
       });
     });
 
@@ -557,9 +643,8 @@ describe('ContinuePlugin', () => {
   });
 
   describe('session.created', () => {
-    it('should enable force-continue when next-session flag is set', async () => {
-      const { setNextSessionEnabled, isEnabled } = await import('../force-continue.server.js');
-      setNextSessionEnabled(true);
+    it('should initialize session state when created', async () => {
+      const { readState } = await import('../force-continue.server.js');
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
@@ -572,36 +657,20 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(isEnabled('new-session-1')).toBe(true);
-    });
-
-    it('should do nothing when next-session flag is not set', async () => {
-      const { isEnabled } = await import('../force-continue.server.js');
-
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
-      const plugin = await createPlugin(mockCtx);
-
-      await plugin.event({
-        event: {
-          type: 'session.created',
-          properties: { info: { id: 'new-session-2' } }
-        }
-      });
-
-      expect(isEnabled('new-session-2')).toBe(true);
+      const state = readState();
+      expect(state.sessions['new-session-1']).toBeDefined();
     });
   });
 
   describe('session.deleted', () => {
     it('should clean up state on delete', async () => {
-      const { isEnabled } = await import('../force-continue.server.js');
+      const { readState } = await import('../force-continue.server.js');
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
 
-      await plugin['chat.message']({ sessionID: 'active-session' });
+      await plugin['chat.message']({ sessionID: 'deleted-session' });
 
       await plugin.event({
         event: {
@@ -610,11 +679,9 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(isEnabled('active-session')).toBe(true);
-
-      const { readState } = await import('../force-continue.server.js');
       const state = readState();
       expect(state.sessions['deleted-session']).toBeUndefined();
+      expect(sessionCompletionState.has('deleted-session')).toBe(false);
     });
   });
 

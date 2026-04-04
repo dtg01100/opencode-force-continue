@@ -5,9 +5,9 @@ PLUGIN_FILES=("force-continue.server.js")
 
 # Determine target directory
 if [ "${1:-}" = "--project" ]; then
-	PLUGIN_DIR=".opencode/plugins"
+	PLUGIN_DIR=".opencode/plugin"
 else
-	PLUGIN_DIR="$HOME/.config/opencode/plugins"
+	PLUGIN_DIR="$HOME/.config/opencode/plugin"
 fi
 
 echo "Installing force-continue plugin to $PLUGIN_DIR"

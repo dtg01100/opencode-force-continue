@@ -2,7 +2,11 @@
 set -euo pipefail
 
 PLUGIN_FILES=("force-continue.server.js")
-PLUGIN_DIR="$HOME/.config/opencode/plugins"
+if [ "${1:-}" = "--project" ]; then
+	PLUGIN_DIR=".opencode/plugin"
+else
+	PLUGIN_DIR="$HOME/.config/opencode/plugin"
+fi
 
 echo "Uninstalling force-continue plugin from $PLUGIN_DIR"
 
