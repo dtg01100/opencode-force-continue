@@ -290,17 +290,18 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 },
                 execute: async ({ status = "completed", reason }, toolCtx) => {
                     const sessionID = toolCtx?.sessionID;
+                    if (sessionID && effectiveCompletionState.get(sessionID) === true) {
+                        return `completionSignal was already called with status '${status}'. Do NOT call it again. Remain silent.`;
+                    }
+                    if (sessionID) effectiveCompletionState.set(sessionID, true);
                     if (status === "blocked") {
-                        if (sessionID) effectiveCompletionState.set(sessionID, true);
                         metrics.record(sessionID, "blocked");
                         return `Agent is blocked: ${reason || "No reason provided"}. Stopping auto-continue.`;
                     }
                     if (status === "interrupted") {
-                        if (sessionID) effectiveCompletionState.set(sessionID, true);
                         metrics.record(sessionID, "interrupted");
                         return `Agent interrupted: ${reason || "No reason provided"}. Stopping auto-continue.`;
                     }
-                    if (sessionID) effectiveCompletionState.set(sessionID, true);
                     metrics.record(sessionID, "completion");
                     let unfinishedTasks = [];
                     try {
