@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('@opencode-ai/plugin', () => ({
-  tool: Object.assign(vi.fn((def) => ({ type: 'tool', ...def })), {
-    schema: {
-      string: () => ({ optional: () => ({ describe: () => ({}) }) }),
-      number: () => ({ optional: () => ({ describe: () => ({}) }) }),
-    },
-  }),
-}));
+vi.mock('@opencode-ai/plugin', () => {
+  const chainable = () => ({ optional: () => ({ describe: () => ({}) }), describe: () => ({}) });
+  return {
+    tool: Object.assign(vi.fn((def) => ({ type: 'tool', ...def })), {
+      schema: {
+        string: chainable,
+        number: chainable,
+      },
+    }),
+  };
+});
 
 // ─── module-level helpers ─────────────────────────────────────────────────────
 
@@ -19,7 +22,9 @@ describe('module-level helpers', () => {
 describe('in-memory state behavior', () => {
     it('should return defaults when fresh', async () => {
       const { readState } = await import('../force-continue.server.js');
-      expect(readState()).toEqual({ sessions: {} });
+      const state = readState();
+      expect(state.sessions).toEqual({});
+      expect(state.metrics).toBeDefined();
     });
 
     it('should read state values after updates', async () => {
@@ -814,6 +819,410 @@ describe('ContinuePlugin', () => {
       expect(res).toHaveProperty('probe');
       expect(res.probe.ok).toBe(true);
       expect(mockClient.session.promptAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('configuration', () => {
+    it('should respect maxContinuations from options', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState, { maxContinuations: 3 });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Stuck' }] }]
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'config-session' });
+      for (let i = 0; i < 3; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'config-session' } } });
+      }
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
+      expect(lastCall.parts[0].text).toContain('3/3');
+    });
+
+    it('should respect escalationThreshold from options', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState, { escalationThreshold: 2 });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Stuck' }] }]
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'escalation-config-session' });
+      for (let i = 0; i < 2; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'escalation-config-session' } } });
+      }
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).toContain('2 rounds');
+      expect(lastCall.parts[0].text).toContain('List the remaining steps');
+    });
+
+    it('should disable auto-continue when autoContinueEnabled is false', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState, { autoContinueEnabled: false });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'disabled-session' });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'disabled-session' } } });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+
+    it('should disable loop detection when enableLoopDetection is false', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState, { enableLoopDetection: false });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'no-loop-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'First response about fixing the bug' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'no-loop-session' } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Second different response' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'no-loop-session' } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Third different response' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'no-loop-session' } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'First response about fixing the bug' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'no-loop-session' } } });
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.parts[0].text).not.toContain('WARNING');
+      expect(lastCall.parts[0].text).not.toContain('repeat');
+    });
+  });
+
+  describe('statusReport tool', () => {
+    it('should record progress and reset continuation count', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'report-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'report-session' } } });
+
+      const toolDef = plugin.tool.statusReport;
+      const result = await toolDef.execute(
+        { progress: 'Completed 3 of 5 steps', nextSteps: 'Finish remaining steps', blockers: null },
+        { sessionID: 'report-session' } as any
+      );
+
+      expect(result).toContain('Progress recorded');
+      expect(result).toContain('Continuing work');
+
+      const state = readState();
+      expect(state.sessions['report-session'].lastProgressReport).toBeDefined();
+      expect(state.sessions['report-session'].continuationCount).toBe(0);
+    });
+  });
+
+  describe('requestGuidance tool', () => {
+    it('should pause auto-continue when guidance is requested', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'guidance-session' });
+
+      const toolDef = plugin.tool.requestGuidance;
+      const result = await toolDef.execute(
+        { question: 'Should I use approach A or B?', context: 'Both have tradeoffs', options: null },
+        { sessionID: 'guidance-session' } as any
+      );
+
+      expect(result).toContain('Guidance request recorded');
+      expect(result).toContain('Auto-continue paused');
+      expect(sessionCompletionState.get('guidance-session')).toBe(true);
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still waiting' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-session' } } });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pauseAutoContinue tool', () => {
+    it('should pause auto-continue temporarily', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'pause-session' });
+
+      const toolDef = plugin.tool.pauseAutoContinue;
+      const result = await toolDef.execute(
+        { reason: 'Need time to plan', estimatedTime: '5 minutes' },
+        { sessionID: 'pause-session' } as any
+      );
+
+      expect(result).toContain('Auto-continue paused');
+      expect(sessionCompletionState.get('pause-session')).toBe(true);
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Thinking' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pause-session' } } });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('healthCheck tool', () => {
+    it('should return summary metrics', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.healthCheck;
+      const result = await toolDef.execute({ detail: 'summary' }, {} as any);
+
+      expect(result).toContain('Plugin health');
+      expect(result).toContain('sessions');
+      expect(result).toContain('continuations');
+    });
+
+    it('should return session-level detail', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'health-session' });
+
+      const toolDef = plugin.tool.healthCheck;
+      const result = await toolDef.execute({ detail: 'sessions' }, {} as any);
+
+      expect(result).toContain('Active sessions');
+      expect(result).toContain('Metrics');
+    });
+
+    it('should return full detail with config', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.healthCheck;
+      const result = await toolDef.execute({ detail: 'full' }, {} as any);
+
+      const parsed = JSON.parse(result);
+      expect(parsed).toHaveProperty('metrics');
+      expect(parsed).toHaveProperty('config');
+      expect(parsed.config).toHaveProperty('maxContinuations');
+    });
+  });
+
+  describe('tool.execute.before', () => {
+    it('should block dangerous commands', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await expect(plugin['tool.execute.before'](
+        { sessionID: 'danger-session', tool: 'bash', args: { command: 'rm -rf /' } },
+        {}
+      )).rejects.toThrow('Dangerous command blocked');
+    });
+
+    it('should allow safe commands', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await expect(plugin['tool.execute.before'](
+        { sessionID: 'safe-session', tool: 'bash', args: { command: 'ls -la' } },
+        {}
+      )).resolves.not.toThrow();
+    });
+
+    it('should ignore tools in ignoreTools list', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await expect(plugin['tool.execute.before'](
+        { sessionID: 'ignore-session', tool: 'read', args: { filePath: 'test.txt' } },
+        {}
+      )).resolves.not.toThrow();
+    });
+  });
+
+  describe('tool.execute.after', () => {
+    it('should track tool call history', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'tool-track-session' });
+      await plugin['tool.execute.after']({ sessionID: 'tool-track-session', tool: 'bash', args: { command: 'ls' } });
+      await plugin['tool.execute.after']({ sessionID: 'tool-track-session', tool: 'edit', args: { filePath: 'test.js' } });
+
+      const state = readState();
+      expect(state.sessions['tool-track-session'].toolCallHistory).toHaveLength(2);
+      expect(state.sessions['tool-track-session'].toolCallHistory[0].tool).toBe('bash');
+    });
+
+    it('should track files modified', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'file-track-session' });
+      await plugin['tool.execute.after']({ sessionID: 'file-track-session', tool: 'edit', args: { filePath: 'src/a.ts' } });
+      await plugin['tool.execute.after']({ sessionID: 'file-track-session', tool: 'write', args: { filePath: 'src/b.ts' } });
+
+      const state = readState();
+      expect(state.sessions['file-track-session'].filesModified).toBeDefined();
+      expect(state.sessions['file-track-session'].filesModified.has('src/a.ts')).toBe(true);
+      expect(state.sessions['file-track-session'].filesModified.has('src/b.ts')).toBe(true);
+    });
+
+    it('should detect tool call loops', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'tool-loop-session' });
+      for (let i = 0; i < 4; i++) {
+        await plugin['tool.execute.after']({ sessionID: 'tool-loop-session', tool: 'bash', args: { command: 'same-cmd' } });
+      }
+
+      const state = readState();
+      expect(state.sessions['tool-loop-session'].toolLoopDetected).toBe(true);
+    });
+  });
+
+  describe('file.edited event', () => {
+    it('should track file edits from file.edited events', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'file-event-session' });
+      await plugin.event({
+        event: { type: 'file.edited', properties: { sessionID: 'file-event-session', filePath: 'src/main.ts' } }
+      });
+
+      const state = readState();
+      expect(state.sessions['file-event-session'].filesModified.has('src/main.ts')).toBe(true);
+    });
+  });
+
+  describe('session.compacting', () => {
+    it('should inject state into compaction context', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'compact-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working on step 1' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'compact-session' } } });
+
+      const context: string[] = [];
+      await plugin['experimental.session.compacting']({ sessionID: 'compact-session' }, { context });
+
+      expect(context.length).toBe(1);
+      expect(context[0]).toContain('force-continue-state');
+      expect(context[0]).toContain('Continuation count: 1');
+    });
+  });
+
+  describe('circuit breaker', () => {
+    it('should trip circuit breaker after threshold errors', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState, { circuitBreakerThreshold: 3 });
+      mockClient.session.messages.mockRejectedValue(new Error('Network error'));
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'circuit-session' });
+
+      for (let i = 0; i < 3; i++) {
+        await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'circuit-session' } } });
+      }
+
+      expect(sessionCompletionState.get('circuit-session')).toBe(true);
+    });
+  });
+
+  describe('metrics', () => {
+    it('should track session creation in metrics', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'metrics-session' } } } });
+
+      const state = readState();
+      expect(state.metrics.totalSessions).toBeGreaterThan(0);
+    });
+
+    it('should track continuations in metrics', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'metrics-cont-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'metrics-cont-session' } } });
+
+      const state = readState();
+      expect(state.metrics.totalContinuations).toBeGreaterThan(0);
+    });
+  });
+
+  describe('persistence helpers', () => {
+    it('should create a file store', async () => {
+      const { createFileStore } = await import('../force-continue.server.js');
+      const store = createFileStore(process.cwd());
+      expect(store).toHaveProperty('get');
+      expect(store).toHaveProperty('set');
+      expect(store).toHaveProperty('delete');
+      expect(store).toHaveProperty('keys');
+    });
+
+    it('should create a hybrid store', async () => {
+      const { createHybridStore } = await import('../force-continue.server.js');
+      const mem = new Map();
+      const store = createHybridStore(mem, null);
+      store.set('key1', 'value1');
+      expect(store.get('key1')).toBe('value1');
+      expect(store.has('key1')).toBe(true);
+      store.delete('key1');
+      expect(store.has('key1')).toBe(false);
+    });
+
+    it('should create a metrics tracker', async () => {
+      const { createMetricsTracker } = await import('../force-continue.server.js');
+      const tracker = createMetricsTracker();
+      tracker.record('s1', 'session.created');
+      tracker.record('s1', 'continuation');
+      tracker.record('s1', 'continuation');
+      tracker.record('s1', 'completion');
+
+      const summary = tracker.getSummary();
+      expect(summary.totalSessions).toBe(1);
+      expect(summary.totalContinuations).toBe(2);
+      expect(summary.completions).toBe(1);
     });
   });
 });
