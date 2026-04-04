@@ -44,7 +44,9 @@ function resolveConfig() {
             try {
                 fileConfig = JSON.parse(readFileSync(p, "utf-8"));
                 break;
-            } catch {}
+            } catch (e) {
+                console.warn(`force-continue: Failed to parse config file ${p}: ${e?.message ?? e}`);
+            }
         }
     }
 
@@ -217,7 +219,7 @@ function isTaskDone(status) {
 
 // ─── Plugin Factory ─────────────────────────────────────────────────────────
 
-export const createContinuePlugin = (sessionCompletionState = new Map(), options = {}) => {
+export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };
 
     return async (ctx) => {
@@ -888,6 +890,12 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     } catch (e) {
                         meta.errorCount = (meta.errorCount || 0) + 1;
                         sessionState.set(sessionID, meta);
+                        if (meta.errorCount >= config.circuitBreakerThreshold) {
+                            metrics.record(sessionID, "circuit.breaker.trip");
+                            meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
+                            sessionState.set(sessionID, meta);
+                            log("warn", "Circuit breaker tripped after error", { sessionID, errorCount: meta.errorCount });
+                        }
                         metrics.record(sessionID, "error");
                         log("error", "Plugin error during idle handling", { error: e?.stack ?? e });
                     }

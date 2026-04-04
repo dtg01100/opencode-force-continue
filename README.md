@@ -118,7 +118,7 @@ The plugin is implemented as a single server file: `force-continue.server.js` (i
 Overview:
 
 - The plugin hooks into OpenCode's server lifecycle and session events. It watches sessions for inactivity and incomplete work and sends short prompts to encourage the model to finish until the model explicitly calls the `completionSignal` tool.
-- Runtime state is kept in two places: an internal `sessionState` Map (private to the server file) and a `sessionCompletionState` Map which is provided to `createContinuePlugin` (defaults to a new Map). Both are in-memory by default.
+- Runtime state is kept in an internal `sessionState` Map (private to the server file). It is in-memory by default.
 
 Key components (in `force-continue.server.js`):
 

@@ -46,13 +46,11 @@ describe('in-memory state behavior', () => {
 // ─── ContinuePlugin (server) ────────────────────────────────────────────────
 
 describe('ContinuePlugin', () => {
-  let sessionCompletionState: Map<string, boolean>;
   let mockClient: any;
   let mockCtx: any;
 
   beforeEach(() => {
     vi.resetModules();
-    sessionCompletionState = new Map();
     mockClient = {
       session: {
         messages: vi.fn(),
@@ -70,7 +68,7 @@ describe('ContinuePlugin', () => {
   describe('session tracking', () => {
     it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-1' } } } });
@@ -82,7 +80,7 @@ describe('ContinuePlugin', () => {
 
     it('should send Continue prompt on idle', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       mockClient.session.messages.mockResolvedValue({
@@ -101,7 +99,7 @@ describe('ContinuePlugin', () => {
 
     it('should reset continuation count, lastAssistantText, and responseHistory on chat.message', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'reset-session' });
@@ -128,7 +126,7 @@ describe('ContinuePlugin', () => {
   describe('always-on behavior', () => {
     it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-2' } } } });
@@ -140,7 +138,7 @@ describe('ContinuePlugin', () => {
 
     it('should inject system message when requested', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session' });
@@ -154,7 +152,7 @@ describe('ContinuePlugin', () => {
 
     it('should inject system message for any session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const system: string[] = [];
@@ -168,7 +166,7 @@ describe('ContinuePlugin', () => {
   describe('completionSignal', () => {
     it('should mark session complete when completionSignal tool is completed', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-3' } } } });
@@ -192,7 +190,7 @@ describe('ContinuePlugin', () => {
 
     it('should mark session complete when part.sessionID resolves session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-3b' });
@@ -211,7 +209,7 @@ describe('ContinuePlugin', () => {
 
     it('should not mark session complete when completionSignal is pending', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-pending' } } } });
@@ -235,7 +233,7 @@ describe('ContinuePlugin', () => {
 
     it('should not mark session complete when completionSignal is running', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-running' } } } });
@@ -259,7 +257,7 @@ describe('ContinuePlugin', () => {
 
     it('should mark session complete when completionSignal is blocked or interrupted', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-blocked' });
@@ -289,7 +287,7 @@ describe('ContinuePlugin', () => {
   describe('completionSignal tool execute', () => {
     it('should return "Task completed." when task completed and no unfinished tasks', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.completionSignal;
@@ -301,7 +299,7 @@ describe('ContinuePlugin', () => {
 
     it('should NOT abort session when unfinished tasks remain', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin({
         client: mockClient,
         hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 'T1', title: 'Fix bug', status: 'in-progress' }]) }
@@ -316,7 +314,7 @@ describe('ContinuePlugin', () => {
 
     it('should NOT abort session when status is blocked', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.completionSignal;
@@ -328,7 +326,7 @@ describe('ContinuePlugin', () => {
 
     it('should NOT abort session when status is interrupted', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.completionSignal;
@@ -342,7 +340,7 @@ describe('ContinuePlugin', () => {
   describe('session.idle', () => {
     it('should send Continue prompt when idle without completion', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-4' });
@@ -366,7 +364,7 @@ describe('ContinuePlugin', () => {
 
     it('should send break-out prompt after 3 consecutive continuations', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'loop-session' });
@@ -395,7 +393,7 @@ describe('ContinuePlugin', () => {
 
     it('should escalate further at 4 continuations', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'escalate-session' });
@@ -414,7 +412,7 @@ describe('ContinuePlugin', () => {
 
     it('should hard cap at 5 continuations', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'cap-session' });
@@ -434,7 +432,7 @@ describe('ContinuePlugin', () => {
 
     it('should reset loop counter on new user message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'reset-loop' });
@@ -455,7 +453,7 @@ describe('ContinuePlugin', () => {
 
     it('should reset continuation counter when progress is detected', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'progress-session' });
@@ -481,7 +479,7 @@ describe('ContinuePlugin', () => {
 
     it('should send "did you forget?" prompt when completion-like language detected without signal', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'forgot-signal' });
@@ -498,7 +496,7 @@ describe('ContinuePlugin', () => {
 
     it('should warn about loop when response repeats content from 2+ turns ago', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'loop-detect-session' });
@@ -532,7 +530,7 @@ describe('ContinuePlugin', () => {
 
     it('should force structured plan at escalation count >= 3', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'plan-session' });
@@ -553,7 +551,7 @@ describe('ContinuePlugin', () => {
 
     it('should return "You may now stop" after completionSignal with no unfinished tasks', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.completionSignal;
@@ -564,7 +562,7 @@ describe('ContinuePlugin', () => {
 
     it('should prompt Continue with dynamic task summary when tasks are pending', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working on it' }] }]
       });
@@ -584,7 +582,7 @@ describe('ContinuePlugin', () => {
 
     it('should prompt Continue when backgroundManager.getTasksByParentSession returns object with data array', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Processing' }] }]
       });
@@ -610,7 +608,7 @@ describe('ContinuePlugin', () => {
 
     it('should treat status "complete" as finished and not prompt', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin({
         client: mockClient,
         hooks: { getTasksByParentSession: vi.fn(async () => [{ id: 1, status: 'complete' }]) }
@@ -630,7 +628,7 @@ describe('ContinuePlugin', () => {
 
     it('should not send Continue prompt when session is marked complete', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-5' });
@@ -656,7 +654,7 @@ describe('ContinuePlugin', () => {
 
     it('should not send Continue prompt when no messages exist', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-empty' });
@@ -675,7 +673,7 @@ describe('ContinuePlugin', () => {
 
     it('should resend Continue prompt on subsequent idle when completionSignal is still missing', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-repeat' });
@@ -709,7 +707,7 @@ describe('ContinuePlugin', () => {
 
     it('should not send Continue prompt when last message is not assistant', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-user' });
@@ -730,7 +728,7 @@ describe('ContinuePlugin', () => {
 
     it('should handle session.messages error gracefully', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'test-session-error' });
@@ -747,7 +745,7 @@ describe('ContinuePlugin', () => {
 
     it('should prefer taskBabysitter hook and not prompt', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin({
         client: mockClient,
         hooks: { taskBabysitter: { event: vi.fn() } }
@@ -777,7 +775,7 @@ describe('ContinuePlugin', () => {
       const { readState } = await import('../force-continue.server.js');
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({
@@ -797,7 +795,7 @@ describe('ContinuePlugin', () => {
       const { readState } = await import('../force-continue.server.js');
 
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'deleted-session' });
@@ -811,14 +809,13 @@ describe('ContinuePlugin', () => {
 
       const state = readState();
       expect(state.sessions['deleted-session']).toBeUndefined();
-      expect(sessionCompletionState.has('deleted-session')).toBe(false);
     });
   });
 
   describe('validate tool', () => {
     it('should return capability checks in dry mode', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const res = await plugin.validate({ mode: 'dry' });
@@ -829,7 +826,7 @@ describe('ContinuePlugin', () => {
     it('should perform a probe and call promptAsync when available', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       mockClient.session.promptAsync = vi.fn(async () => true);
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const res = await plugin.validate({ mode: 'probe', sessionID: 'p1' });
@@ -842,7 +839,7 @@ describe('ContinuePlugin', () => {
   describe('configuration', () => {
     it('should respect maxContinuations from options', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState, { maxContinuations: 3 });
+      const createPlugin = createContinuePlugin( { maxContinuations: 3 });
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Stuck' }] }]
       });
@@ -860,7 +857,7 @@ describe('ContinuePlugin', () => {
 
     it('should respect escalationThreshold from options', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState, { escalationThreshold: 2 });
+      const createPlugin = createContinuePlugin( { escalationThreshold: 2 });
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Stuck' }] }]
       });
@@ -878,7 +875,7 @@ describe('ContinuePlugin', () => {
 
     it('should disable auto-continue when autoContinueEnabled is false', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState, { autoContinueEnabled: false });
+      const createPlugin = createContinuePlugin( { autoContinueEnabled: false });
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
       });
@@ -892,7 +889,7 @@ describe('ContinuePlugin', () => {
 
     it('should disable loop detection when enableLoopDetection is false', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState, { enableLoopDetection: false });
+      const createPlugin = createContinuePlugin( { enableLoopDetection: false });
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'no-loop-session' });
@@ -925,7 +922,7 @@ describe('ContinuePlugin', () => {
   describe('statusReport tool', () => {
     it('should record progress and reset continuation count', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'report-session' });
@@ -952,7 +949,7 @@ describe('ContinuePlugin', () => {
   describe('requestGuidance tool', () => {
     it('should pause auto-continue when guidance is requested', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'guidance-session' } } } });
@@ -977,7 +974,7 @@ describe('ContinuePlugin', () => {
 
     it('should resume nudges after user responds to guidance', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'guidance-resume-session' } } } });
@@ -1002,7 +999,7 @@ describe('ContinuePlugin', () => {
   describe('pauseAutoContinue tool', () => {
     it('should pause auto-continue temporarily', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'pause-session' });
@@ -1014,7 +1011,6 @@ describe('ContinuePlugin', () => {
       );
 
       expect(result).toContain('Auto-continue paused');
-      expect(sessionCompletionState.get('pause-session')).toBeFalsy();
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Thinking' }] }]
@@ -1028,7 +1024,7 @@ describe('ContinuePlugin', () => {
   describe('healthCheck tool', () => {
     it('should return summary metrics', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.healthCheck;
@@ -1041,7 +1037,7 @@ describe('ContinuePlugin', () => {
 
     it('should return session-level detail', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'health-session' });
@@ -1055,7 +1051,7 @@ describe('ContinuePlugin', () => {
 
     it('should return full detail with config', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const toolDef = plugin.tool.healthCheck;
@@ -1071,7 +1067,7 @@ describe('ContinuePlugin', () => {
   describe('tool.execute.before', () => {
     it('should block dangerous commands', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
@@ -1082,7 +1078,7 @@ describe('ContinuePlugin', () => {
 
     it('should allow safe commands', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
@@ -1093,7 +1089,7 @@ describe('ContinuePlugin', () => {
 
     it('should ignore tools in ignoreTools list', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
@@ -1106,7 +1102,7 @@ describe('ContinuePlugin', () => {
   describe('tool.execute.after', () => {
     it('should track tool call history', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'tool-track-session' });
@@ -1120,7 +1116,7 @@ describe('ContinuePlugin', () => {
 
     it('should track files modified', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'file-track-session' });
@@ -1135,7 +1131,7 @@ describe('ContinuePlugin', () => {
 
     it('should detect tool call loops', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'tool-loop-session' });
@@ -1151,7 +1147,7 @@ describe('ContinuePlugin', () => {
   describe('file.edited event', () => {
     it('should track file edits from file.edited events', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'file-event-session' });
@@ -1167,7 +1163,7 @@ describe('ContinuePlugin', () => {
   describe('session.compacting', () => {
     it('should inject state into compaction context', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'compact-session' });
@@ -1188,7 +1184,7 @@ describe('ContinuePlugin', () => {
   describe('circuit breaker', () => {
     it('should trip circuit breaker after threshold errors', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState, { circuitBreakerThreshold: 3 });
+      const createPlugin = createContinuePlugin( { circuitBreakerThreshold: 3 });
       mockClient.session.messages.mockRejectedValue(new Error('Network error'));
       const plugin = await createPlugin(mockCtx);
 
@@ -1205,7 +1201,7 @@ describe('ContinuePlugin', () => {
   describe('metrics', () => {
     it('should track session creation in metrics', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'metrics-session' } } } });
@@ -1216,7 +1212,7 @@ describe('ContinuePlugin', () => {
 
     it('should track continuations in metrics', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'metrics-cont-session' });
