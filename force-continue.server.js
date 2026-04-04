@@ -436,7 +436,9 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 meta.awaitingGuidance = null;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
-            effectiveCompletionState.set(sessionID, false);
+            if (effectiveCompletionState.get(sessionID) !== true) {
+                effectiveCompletionState.set(sessionID, false);
+            }
         };
 
         // ─── System Prompt Transform ────────────────────────────────────────
@@ -591,6 +593,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                             log("info", "Session completion summary", { sessionID, summary });
                         }
                     }
+                }
+                if (part?.state?.status === "canceled" || part?.state?.status === "cancelled") {
+                    effectiveCompletionState.set(sessionID, true);
+                    log("debug", "part canceled, suppressing nudges", { sessionID });
                 }
                 return;
             }
