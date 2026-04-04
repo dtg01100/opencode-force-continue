@@ -122,7 +122,7 @@ Overview:
 
 Key components (in `force-continue.server.js`):
 
-- `createContinuePlugin(sessionCompletionState, options)` — factory that returns the plugin server object. Accepts an optional second `options` argument to override config defaults.
+- `createContinuePlugin(options)` — factory that returns the plugin server object. Accepts an optional `options` argument to override config defaults.
 - `ContinuePlugin` — the default exported plugin instance created by `createContinuePlugin()`.
 - Tools exposed to the model:
   - `completionSignal` — call this from the model to indicate the task is finished. Accepts `status` (e.g. `completed`, `blocked`, `interrupted`) and optional `reason`.
@@ -142,14 +142,13 @@ Key components (in `force-continue.server.js`):
 
 Event flow (session.idle handling simplified):
 
-1. On `session.idle`, the handler first checks if auto-continue is disabled, paused, awaiting guidance, or already complete — skipping early if any apply.
+1. On `session.idle`, the handler first checks if auto-continue is disabled or if `autoContinuePaused` is set — skipping early if either applies. `autoContinuePaused` covers all pause reasons: `completionSignal`, `pauseAutoContinue`, `requestGuidance`, circuit breaker, and canceled parts.
 2. If a cooldown is configured (`cooldownMs > 0`), the handler skips if insufficient time has passed since the last idle event.
 3. If task-related hooks are available (task babysitter), the plugin defers to them.
 4. The plugin attempts to query unfinished tasks using several hook candidates (`getTasksByParentSession` from hooks or context). If unfinished tasks are found, it sends a prompt listing them and asks the model to continue or call `completionSignal`.
 5. If no tasks are found, it fetches recent messages. If the last message role is `assistant`, it increments a `continuationCount` and sends either a plain `Continue` prompt, a completion nudge (if completion keywords detected), a loop-break prompt (if loop detected), or escalation prompts when thresholds are exceeded.
-6. When a `message.part.updated` event shows a `completionSignal` tool call (with `status` such as `completed`/`blocked`/`interrupted`), the plugin marks the session complete and stops auto-continuing. Duplicate `completionSignal` calls are rejected.
-7. When a `message.part.updated` event shows a `canceled`/`cancelled`/`interrupted`/`aborted`/`stopped` status, the session is marked complete to suppress further nudges.
-8. On `session.deleted`, session entries are cleaned from in-memory maps.
+6. When a `completionSignal` tool call, `pauseAutoContinue`, `requestGuidance`, circuit breaker, or canceled part sets `autoContinuePaused`, nudges are suppressed. When the user sends a message, `chat.message` clears `autoContinuePaused` and nudges resume.
+7. On `session.deleted`, session entries are cleaned from in-memory maps.
 
 Helpers and extension points:
 

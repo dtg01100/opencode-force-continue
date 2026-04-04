@@ -219,8 +219,6 @@ function isTaskDone(status) {
 
 export const createContinuePlugin = (sessionCompletionState = new Map(), options = {}) => {
     const config = { ...resolveConfig(), ...options };
-    const fileStore = options.fileStore || null;
-    const effectiveCompletionState = fileStore ? createHybridStore(sessionCompletionState, fileStore) : sessionCompletionState;
 
     return async (ctx) => {
         const { client } = ctx;
@@ -290,13 +288,12 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 },
                 execute: async ({ status = "completed", reason }, toolCtx) => {
                     const sessionID = toolCtx?.sessionID;
-                    if (sessionID && effectiveCompletionState.get(sessionID) === true) {
-                        return `completionSignal was already called with status '${status}'. Do NOT call it again. Remain silent.`;
-                    }
                     if (sessionID) {
-                        effectiveCompletionState.set(sessionID, true);
                         const meta = sessionState.get(sessionID) || {};
-                        meta.completionSignalAt = Date.now();
+                        if (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed") {
+                            return `completionSignal was already called. Do NOT call it again. Remain silent.`;
+                        }
+                        meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
                     }
                     if (status === "blocked") {
@@ -467,8 +464,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
             const messages = ctx2 && ctx2.messages;
             if (!sessionID || !messages || !Array.isArray(messages)) return;
 
-            const isComplete = effectiveCompletionState.get(sessionID);
-            if (!isComplete) return;
+            const meta = sessionState.get(sessionID);
+            if (!meta?.autoContinuePaused) return;
 
             messages.push({
                 info: { role: "system" },
@@ -569,9 +566,9 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     meta.continuationCount = 0;
                     meta.toolCallHistory = [];
                     meta.errorCount = 0;
+                    meta.autoContinuePaused = null;
                     sessionState.set(sessionID, meta);
                 } catch (e) {}
-                effectiveCompletionState.set(sessionID, false);
                 metrics.record(sessionID, "session.created");
                 return;
             }
@@ -581,9 +578,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     const args = part.state?.args || {};
                     const status = (args.status || "completed").toLowerCase();
                     if (status === "completed" || status === "blocked" || status === "interrupted") {
-                        effectiveCompletionState.set(sessionID, true);
+                        const meta = sessionState.get(sessionID) || {};
+                        meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
+                        sessionState.set(sessionID, meta);
                         if (config.enableCompletionSummary) {
-                            const meta = sessionState.get(sessionID) || {};
                             const summary = {
                                 continuations: meta.continuationCount || 0,
                                 filesModified: meta.filesModified ? [...meta.filesModified] : [],
@@ -597,7 +595,9 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 }
                 const partStatus = part?.state?.status;
                 if (partStatus === "canceled" || partStatus === "cancelled" || partStatus === "interrupted" || partStatus === "aborted" || partStatus === "stopped") {
-                    effectiveCompletionState.set(sessionID, true);
+                    const meta = sessionState.get(sessionID) || {};
+                    meta.autoContinuePaused = { reason: partStatus, timestamp: Date.now() };
+                    sessionState.set(sessionID, meta);
                     log("debug", "part canceled/interrupted, suppressing nudges", { sessionID, partStatus });
                 }
                 return;
@@ -607,7 +607,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 metrics.record(sessionID, "idle.event");
                 log("debug", "session.idle received", { sessionID });
 
-                const isComplete = effectiveCompletionState.get(sessionID);
                 const meta = sessionState.get(sessionID) || { continuationCount: 0 };
 
                 // Check if auto-continue is disabled
@@ -619,27 +618,15 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
 
                 // Check if auto-continue is paused
                 if (meta.autoContinuePaused) {
-                    const pauseAge = Date.now() - (meta.autoContinuePaused.timestamp || 0);
-                    if (pauseAge < 30 * 60 * 1000) {
-                        metrics.record(sessionID, "idle.skipped.paused");
-                        log("debug", "idle skipped: auto-continue paused", { sessionID });
-                        return;
-                    }
-                    meta.autoContinuePaused = null;
-                    sessionState.set(sessionID, meta);
+                    metrics.record(sessionID, "idle.skipped.paused");
+                    log("debug", "idle skipped: auto-continue paused", { sessionID });
+                    return;
                 }
 
                 // Check if awaiting guidance
                 if (meta.awaitingGuidance) {
                     metrics.record(sessionID, "idle.skipped.guidance");
                     log("debug", "idle skipped: awaiting guidance", { sessionID });
-                    return;
-                }
-
-                // Check if already complete
-                if (isComplete) {
-                    metrics.record(sessionID, "idle.skipped.complete");
-                    log("debug", "idle skipped: session already complete", { sessionID });
                     return;
                 }
 
@@ -819,7 +806,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                             sessionState.set(sessionID, meta);
                             if (meta.errorCount >= config.circuitBreakerThreshold) {
                                 metrics.record(sessionID, "circuit.breaker.trip");
-                                effectiveCompletionState.set(sessionID, true);
+                                meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
+                                sessionState.set(sessionID, meta);
                                 log("warn", "Circuit breaker tripped", { sessionID, errorCount: meta.errorCount });
                             }
                             return;
@@ -856,7 +844,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         meta.errorCount = meta.errorCount || 0;
                         if (meta.errorCount >= config.circuitBreakerThreshold) {
                             metrics.record(sessionID, "circuit.breaker.trip");
-                            effectiveCompletionState.set(sessionID, true);
+                            meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
+                            sessionState.set(sessionID, meta);
                             log("warn", "Circuit breaker tripped", { sessionID, errorCount: meta.errorCount });
                             return;
                         }
@@ -917,7 +906,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                     sessionID = event.properties?.info?.id;
                 }
                 if (!sessionID) return;
-                effectiveCompletionState.delete(sessionID);
                 sessionState.delete(sessionID);
             }
         };

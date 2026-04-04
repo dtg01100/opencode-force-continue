@@ -62,6 +62,11 @@ describe('ContinuePlugin', () => {
     mockCtx = { client: mockClient };
   });
 
+  const getPaused = async (sessionID: string) => {
+    const { readState } = await import('../force-continue.server.js');
+    return readState().sessions[sessionID]?.autoContinuePaused ?? null;
+  };
+
   describe('session tracking', () => {
     it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
@@ -69,10 +74,10 @@ describe('ContinuePlugin', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-1' } } } });
-      expect(sessionCompletionState.get('test-session-1')).toBe(false);
+      expect(await getPaused('test-session-1')).toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-1' });
-      expect(sessionCompletionState.get('test-session-1')).toBe(false);
+      expect(await getPaused('test-session-1')).toBeNull();
     });
 
     it('should send Continue prompt on idle', async () => {
@@ -127,10 +132,10 @@ describe('ContinuePlugin', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-2' } } } });
-      expect(sessionCompletionState.get('test-session-2')).toBe(false);
+      expect(await getPaused('test-session-2')).toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-2' });
-      expect(sessionCompletionState.get('test-session-2')).toBe(false);
+      expect(await getPaused('test-session-2')).toBeNull();
     });
 
     it('should inject system message when requested', async () => {
@@ -167,10 +172,10 @@ describe('ContinuePlugin', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-3' } } } });
-      expect(sessionCompletionState.get('test-session-3')).toBe(false);
+      expect(await getPaused('test-session-3')).toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-3' });
-      expect(sessionCompletionState.get('test-session-3')).toBe(false);
+      expect(await getPaused('test-session-3')).toBeNull();
 
       await plugin.event({
         event: {
@@ -182,7 +187,7 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(sessionCompletionState.get('test-session-3')).toBe(true);
+      expect(await getPaused('test-session-3')).not.toBeNull();
     });
 
     it('should mark session complete when part.sessionID resolves session', async () => {
@@ -201,7 +206,7 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(sessionCompletionState.get('test-session-3b')).toBe(true);
+      expect(await getPaused('test-session-3b')).not.toBeNull();
     });
 
     it('should not mark session complete when completionSignal is pending', async () => {
@@ -210,10 +215,10 @@ describe('ContinuePlugin', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-pending' } } } });
-      expect(sessionCompletionState.get('test-session-pending')).toBe(false);
+      expect(await getPaused('test-session-pending')).toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-pending' });
-      expect(sessionCompletionState.get('test-session-pending')).toBe(false);
+      expect(await getPaused('test-session-pending')).toBeNull();
 
       await plugin.event({
         event: {
@@ -225,7 +230,7 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(sessionCompletionState.get('test-session-pending')).toBe(false);
+      expect(await getPaused('test-session-pending')).toBeNull();
     });
 
     it('should not mark session complete when completionSignal is running', async () => {
@@ -234,10 +239,10 @@ describe('ContinuePlugin', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'test-session-running' } } } });
-      expect(sessionCompletionState.get('test-session-running')).toBe(false);
+      expect(await getPaused('test-session-running')).toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-running' });
-      expect(sessionCompletionState.get('test-session-running')).toBe(false);
+      expect(await getPaused('test-session-running')).toBeNull();
 
       await plugin.event({
         event: {
@@ -249,7 +254,7 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(sessionCompletionState.get('test-session-running')).toBe(false);
+      expect(await getPaused('test-session-running')).toBeNull();
     });
 
     it('should mark session complete when completionSignal is blocked or interrupted', async () => {
@@ -266,7 +271,7 @@ describe('ContinuePlugin', () => {
           }
         }
       });
-      expect(sessionCompletionState.get('test-session-blocked')).toBe(true);
+      expect(await getPaused('test-session-blocked')).not.toBeNull();
 
       await plugin['chat.message']({ sessionID: 'test-session-interrupted' });
       await plugin.event({
@@ -277,7 +282,7 @@ describe('ContinuePlugin', () => {
           }
         }
       });
-      expect(sessionCompletionState.get('test-session-interrupted')).toBe(true);
+      expect(await getPaused('test-session-interrupted')).not.toBeNull();
     });
   });
 
@@ -291,7 +296,7 @@ describe('ContinuePlugin', () => {
       const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'complete-session' } as any);
 
       expect(result).toBe('Task completed. You may now stop.');
-      expect(sessionCompletionState.get('complete-session')).toBe(true);
+      expect(await getPaused('complete-session')).not.toBeNull();
     });
 
     it('should NOT abort session when unfinished tasks remain', async () => {
@@ -306,7 +311,7 @@ describe('ContinuePlugin', () => {
       const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'task-session' } as any);
 
       expect(result).toBe('Ready for user.');
-      expect(sessionCompletionState.get('task-session')).toBe(true);
+      expect(await getPaused('task-session')).not.toBeNull();
     });
 
     it('should NOT abort session when status is blocked', async () => {
@@ -318,7 +323,7 @@ describe('ContinuePlugin', () => {
       const result = await toolDef.execute({ status: 'blocked', reason: 'quota exceeded' }, { sessionID: 'blocked-session' } as any);
 
       expect(result).toBe('Agent is blocked: quota exceeded. Stopping auto-continue.');
-      expect(sessionCompletionState.get('blocked-session')).toBe(true);
+      expect(await getPaused('blocked-session')).not.toBeNull();
     });
 
     it('should NOT abort session when status is interrupted', async () => {
@@ -330,7 +335,7 @@ describe('ContinuePlugin', () => {
       const result = await toolDef.execute({ status: 'interrupted', reason: 'user stopped' }, { sessionID: 'interrupted-session' } as any);
 
       expect(result).toBe('Agent interrupted: user stopped. Stopping auto-continue.');
-      expect(sessionCompletionState.get('interrupted-session')).toBe(true);
+      expect(await getPaused('interrupted-session')).not.toBeNull();
     });
   });
 
@@ -960,7 +965,7 @@ describe('ContinuePlugin', () => {
 
       expect(result).toContain('Guidance request recorded');
       expect(result).toContain('Auto-continue paused');
-      expect(sessionCompletionState.get('guidance-session')).toBeFalsy();
+      expect(await getPaused('guidance-session')).toBeNull();
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still waiting' }] }]
@@ -1193,7 +1198,7 @@ describe('ContinuePlugin', () => {
         await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'circuit-session' } } });
       }
 
-      expect(sessionCompletionState.get('circuit-session')).toBe(true);
+      expect(await getPaused('circuit-session')).not.toBeNull();
     });
   });
 
