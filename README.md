@@ -148,7 +148,7 @@ Event flow (session.idle handling simplified):
 4. The plugin attempts to query unfinished tasks using several hook candidates (`getTasksByParentSession` from hooks or context). If unfinished tasks are found, it sends a prompt listing them and asks the model to continue or call `completionSignal`.
 5. If no tasks are found, it fetches recent messages. If the last message role is `assistant`, it increments a `continuationCount` and sends either a plain `Continue` prompt, a completion nudge (if completion keywords detected), a loop-break prompt (if loop detected), or escalation prompts when thresholds are exceeded.
 6. When a `message.part.updated` event shows a `completionSignal` tool call (with `status` such as `completed`/`blocked`/`interrupted`), the plugin marks the session complete and stops auto-continuing. Duplicate `completionSignal` calls are rejected.
-7. When a `message.part.updated` event shows a `canceled`/`cancelled` status, the session is marked complete to suppress further nudges.
+7. When a `message.part.updated` event shows a `canceled`/`cancelled`/`interrupted`/`aborted`/`stopped` status, the session is marked complete to suppress further nudges.
 8. On `session.deleted`, session entries are cleaned from in-memory maps.
 
 Helpers and extension points:

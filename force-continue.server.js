@@ -377,7 +377,6 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                 execute: async ({ question, context, options }, toolCtx) => {
                     const sessionID = toolCtx?.sessionID;
                     if (sessionID) {
-                        effectiveCompletionState.set(sessionID, true);
                         const meta = sessionState.get(sessionID) || {};
                         meta.awaitingGuidance = { question, context, options, timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
@@ -596,9 +595,10 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
                         }
                     }
                 }
-                if (part?.state?.status === "canceled" || part?.state?.status === "cancelled") {
+                const partStatus = part?.state?.status;
+                if (partStatus === "canceled" || partStatus === "cancelled" || partStatus === "interrupted" || partStatus === "aborted" || partStatus === "stopped") {
                     effectiveCompletionState.set(sessionID, true);
-                    log("debug", "part canceled, suppressing nudges", { sessionID });
+                    log("debug", "part canceled/interrupted, suppressing nudges", { sessionID, partStatus });
                 }
                 return;
             }

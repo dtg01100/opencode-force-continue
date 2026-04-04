@@ -950,7 +950,7 @@ describe('ContinuePlugin', () => {
       const createPlugin = createContinuePlugin(sessionCompletionState);
       const plugin = await createPlugin(mockCtx);
 
-      await plugin['chat.message']({ sessionID: 'guidance-session' });
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'guidance-session' } } } });
 
       const toolDef = plugin.tool.requestGuidance;
       const result = await toolDef.execute(
@@ -960,7 +960,7 @@ describe('ContinuePlugin', () => {
 
       expect(result).toContain('Guidance request recorded');
       expect(result).toContain('Auto-continue paused');
-      expect(sessionCompletionState.get('guidance-session')).toBe(true);
+      expect(sessionCompletionState.get('guidance-session')).toBeFalsy();
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still waiting' }] }]
@@ -968,6 +968,29 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-session' } } });
 
       expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+
+    it('should resume nudges after user responds to guidance', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'guidance-resume-session' } } } });
+
+      const toolDef = plugin.tool.requestGuidance;
+      await toolDef.execute(
+        { question: 'Which approach?', context: null, options: null },
+        { sessionID: 'guidance-resume-session' } as any
+      );
+
+      await plugin['chat.message']({ sessionID: 'guidance-resume-session' });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-resume-session' } } });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
   });
 
