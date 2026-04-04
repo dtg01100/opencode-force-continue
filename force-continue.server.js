@@ -447,7 +447,7 @@ export const createContinuePlugin = (sessionCompletionState = new Map(), options
             const msgMeta = sessionState.get(sessionID) || {};
             const completionSignalAt = msgMeta.completionSignalAt || 0;
             const timeSinceCompletion = Date.now() - completionSignalAt;
-            if (completionSignalAt === 0 || timeSinceCompletion > 30000) {
+            if (completionSignalAt === 0 || timeSinceCompletion > 5000) {
                 effectiveCompletionState.set(sessionID, false);
             }
         };
