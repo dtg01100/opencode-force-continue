@@ -87,6 +87,31 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
+
+    it('should reset continuation count, lastAssistantText, and responseHistory on chat.message', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin(sessionCompletionState);
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'reset-session' });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working on it' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-session' } } });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-session' } } });
+
+      let state = readState();
+      expect(state.sessions['reset-session'].continuationCount).toBe(2);
+      expect(state.sessions['reset-session'].lastAssistantText).toBe('Working on it');
+
+      await plugin['chat.message']({ sessionID: 'reset-session' });
+
+      state = readState();
+      expect(state.sessions['reset-session'].continuationCount).toBe(0);
+      expect(state.sessions['reset-session'].lastAssistantText).toBeNull();
+      expect(state.sessions['reset-session'].responseHistory).toEqual([]);
+    });
   });
 
   describe('always-on behavior', () => {

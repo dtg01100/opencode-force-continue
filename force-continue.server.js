@@ -141,6 +141,8 @@ export const createContinuePlugin = (sessionCompletionState = new Map()) => {
                 const meta = sessionState.get(sessionID) || {};
                 meta.lastSeen = Date.now();
                 meta.continuationCount = 0;
+                meta.lastAssistantText = null;
+                meta.responseHistory = [];
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
             sessionCompletionState.set(sessionID, false);
