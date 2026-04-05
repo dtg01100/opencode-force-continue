@@ -24,6 +24,20 @@ Add the plugin to your `opencode.json` (global `~/.config/opencode/opencode.json
 
 Restart OpenCode. The plugin auto-installs and registers automatically.
 
+### Verify Installation
+
+After restarting OpenCode, the plugin is working if you see a message like:
+
+> "You appear to have finished but did not call completionSignal. Please call it now."
+
+This means the plugin detected a completion-like response without a `completionSignal` call.
+
+To check plugin status, use the `healthCheck` tool:
+
+```
+healthCheck(detail='summary')
+```
+
 ### Quick install (global)
 
 ```bash
