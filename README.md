@@ -38,21 +38,9 @@ To check plugin status, use the `healthCheck` tool:
 healthCheck(detail='summary')
 ```
 
-### Quick install (global)
-
-```bash
-./install.sh
-```
-
-### Quick install (project-level)
-
-```bash
-./install.sh --project
-```
-
 ### Updating
 
-When using the `opencode.json` method, the plugin updates automatically when you restart OpenCode. To pin a specific version:
+The plugin updates automatically when you restart OpenCode. To pin a specific version:
 
 ```json
 {
@@ -62,17 +50,7 @@ When using the `opencode.json` method, the plugin updates automatically when you
 
 ### Uninstall
 
-When using the `opencode.json` method, remove the plugin from the `plugin` array and restart OpenCode.
-
-For manual installations:
-
-```bash
-# Global
-rm ~/.config/opencode/plugins/force-continue.server.js
-
-# Project-level
-rm .opencode/plugins/force-continue.server.js
-```
+Remove the plugin from the `plugin` array in `opencode.json` and restart OpenCode.
 
 ## Usage
 
