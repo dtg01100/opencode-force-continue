@@ -413,6 +413,7 @@ export const createContinuePlugin = (options = {}) => {
                         if (config.autopilotEnabled) {
                             if (meta.autopilotAttempts >= config.autopilotMaxAttempts) {
                                 log("info", "Autopilot max attempts reached, waiting for user", { sessionID });
+                                metrics.record(sessionID, "autopilot.fallback");
                                 return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Waiting for user input.`;
                             }
 
@@ -427,10 +428,11 @@ export const createContinuePlugin = (options = {}) => {
                                 });
 
                                 log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
+                                metrics.record(sessionID, "autopilot.attempt");
                                 return null;
                         } catch (e) {
                             log("error", "Autopilot failed", { error: e?.stack ?? e });
-                            // Explicit fallthrough: autopilot failed, continue to return normal guidance message
+                            metrics.record(sessionID, "autopilot.fallback");
                         }
                         }
                     }
