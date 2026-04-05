@@ -400,9 +400,36 @@ export const createContinuePlugin = (options = {}) => {
                     if (sessionID) {
                         const meta = sessionState.get(sessionID) || {};
                         meta.awaitingGuidance = { question, context, options, timestamp: Date.now() };
+                        meta.autopilotAttempts = meta.autopilotAttempts || 0;
                         sessionState.set(sessionID, meta);
                         log("info", "Guidance requested", { sessionID, question });
                     }
+
+                    if (config.autopilotEnabled) {
+                        const meta = sessionState.get(sessionID) || {};
+
+                        if (meta.autopilotAttempts >= config.autopilotMaxAttempts) {
+                            log("info", "Autopilot max attempts reached, waiting for user", { sessionID });
+                            return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Waiting for user input.`;
+                        }
+
+                        try {
+                            meta.autopilotAttempts++;
+                            sessionState.set(sessionID, meta);
+
+                            const prompt = buildAutopilotPrompt(question, context, options);
+                            await client.session.promptAsync({
+                                path: { id: sessionID },
+                                body: { parts: [{ type: "text", text: prompt }] }
+                            });
+
+                            log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
+                            return null;
+                        } catch (e) {
+                            log("error", "Autopilot failed", { error: e?.stack ?? e });
+                        }
+                    }
+
                     return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAuto-continue paused until user responds.`;
                 },
             }),
