@@ -45,7 +45,7 @@ export const tui = async (api, options, meta) => {
                     writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
                     api.ui.toast({
                         message: `Autopilot ${newEnabled ? "enabled" : "disabled"}`,
-                        type: "info",
+                        variant: "info",
                     });
                 },
             },
