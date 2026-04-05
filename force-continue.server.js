@@ -21,6 +21,7 @@ const DEFAULT_CONFIG = {
     dangerousCommands: ["rm -rf /", "rm -rf ~", "mkfs", "dd if=/dev/zero", "> /dev/sda"],
     autopilotEnabled: false,
     autopilotMaxAttempts: 3,
+    skipNudgeInSubagents: true,
 };
 
 function resolveConfig() {
@@ -41,6 +42,8 @@ function resolveConfig() {
         envConfig.autopilotEnabled = process.env.FORCE_CONTINUE_AUTOPILOT_ENABLED !== "false";
     if (process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS)
         envConfig.autopilotMaxAttempts = parseInt(process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS, 10);
+    if (process.env.FORCE_CONTINUE_SKIP_NUDGE_IN_SUBAGENTS !== undefined)
+        envConfig.skipNudgeInSubagents = process.env.FORCE_CONTINUE_SKIP_NUDGE_IN_SUBAGENTS !== "false";
 
     let fileConfig = {};
     const configPaths = [
@@ -59,6 +62,31 @@ function resolveConfig() {
     }
 
     return { ...DEFAULT_CONFIG, ...fileConfig, ...envConfig };
+}
+
+function getAutopilotStorePath() {
+    return join(process.cwd(), ".opencode", "force-continue-store", "autopilot.json");
+}
+
+function readAutopilotState() {
+    const p = getAutopilotStorePath();
+    if (!existsSync(p)) return null;
+    try {
+        return JSON.parse(readFileSync(p, "utf-8"));
+    } catch {
+        return null;
+    }
+}
+
+function writeAutopilotState(state) {
+    const p = getAutopilotStorePath();
+    const dir = join(process.cwd(), ".opencode", "force-continue-store");
+    try {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(p, JSON.stringify(state));
+    } catch (e) {
+        console.warn(`force-continue: Failed to write autopilot state: ${e?.message ?? e}`);
+    }
 }
 
 // ─── Persistence Layer ──────────────────────────────────────────────────────
@@ -209,6 +237,7 @@ function createMetricsTracker() {
 
 const sessionState = new Map();
 const metrics = createMetricsTracker();
+let runtimeConfig = null;
 
 function updateLastSeen(sessionID) {
     if (!sessionID || typeof sessionID !== "string") return;
@@ -231,6 +260,11 @@ function isTaskDone(status) {
     return normalized === "done" || normalized === "completed" || normalized === "complete";
 }
 
+function isSubagentSession(sessionID) {
+    if (typeof sessionID !== "string") return false;
+    return sessionID.includes("$$");
+}
+
 function buildAutopilotPrompt(question, context, options) {
     if (!question || typeof question !== "string") {
         throw new Error("buildAutopilotPrompt: question is required and must be a string");
@@ -249,6 +283,19 @@ function buildAutopilotPrompt(question, context, options) {
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };
+
+    function getAutopilotEnabled() {
+        const stored = readAutopilotState();
+        return stored?.enabled ?? config.autopilotEnabled;
+    }
+
+    function getAutopilotMaxAttempts() {
+        const stored = readAutopilotState();
+        if (stored && stored.maxAttempts !== undefined) {
+            return stored.maxAttempts;
+        }
+        return config.autopilotMaxAttempts;
+    }
 
     return async (ctx) => {
         const { client } = ctx;
@@ -410,8 +457,10 @@ export const createContinuePlugin = (options = {}) => {
                         sessionState.set(sessionID, meta);
                         log("info", "Guidance requested", { sessionID, question });
 
-                        if (config.autopilotEnabled) {
-                            if (meta.autopilotAttempts >= config.autopilotMaxAttempts) {
+                        const autopilotEnabled = getAutopilotEnabled();
+                        if (autopilotEnabled) {
+                            const autopilotMaxAttempts = getAutopilotMaxAttempts();
+                            if (meta.autopilotAttempts >= autopilotMaxAttempts) {
                                 log("info", "Autopilot max attempts reached, waiting for user", { sessionID });
                                 metrics.record(sessionID, "autopilot.fallback");
                                 return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Waiting for user input.`;
@@ -475,6 +524,18 @@ export const createContinuePlugin = (options = {}) => {
                         return `Active sessions: ${activeSessions}. Metrics: ${JSON.stringify(summary, null, 2)}`;
                     }
                     return JSON.stringify({ metrics: summary, config: { maxContinuations: config.maxContinuations, escalationThreshold: config.escalationThreshold, autoContinueEnabled: config.autoContinueEnabled }, sessions: readState().sessions }, null, 2);
+                },
+            }),
+            setAutopilot: tool({
+                description: "Enable or disable the autopilot feature for guidance requests. When enabled, the AI will make decisions autonomously instead of waiting for user input.",
+                args: {
+                    enabled: tool.schema.boolean().describe("Whether to enable (true) or disable (false) autopilot."),
+                },
+                execute: async ({ enabled }) => {
+                    writeAutopilotState({ enabled, timestamp: Date.now() });
+                    runtimeConfig = { ...config, autopilotEnabled: enabled };
+                    log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool`);
+                    return `Autopilot ${enabled ? "enabled" : "disabled"}.`;
                 },
             }),
         };
@@ -685,6 +746,13 @@ export const createContinuePlugin = (options = {}) => {
                 if (meta.awaitingGuidance) {
                     metrics.record(sessionID, "idle.skipped.guidance");
                     log("debug", "idle skipped: awaiting guidance", { sessionID });
+                    return;
+                }
+
+                // Check if subagent session and skip nudge in subagents is enabled
+                if (config.skipNudgeInSubagents && isSubagentSession(sessionID)) {
+                    metrics.record(sessionID, "idle.skipped.subagent");
+                    log("debug", "idle skipped: subagent session", { sessionID });
                     return;
                 }
 

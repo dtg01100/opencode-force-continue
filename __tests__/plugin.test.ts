@@ -7,6 +7,7 @@ vi.mock('@opencode-ai/plugin', () => {
       schema: {
         string: chainable,
         number: chainable,
+        boolean: chainable,
       },
     }),
   };
@@ -916,6 +917,41 @@ describe('ContinuePlugin', () => {
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
       expect(lastCall.body.parts[0].text).not.toContain('WARNING');
       expect(lastCall.body.parts[0].text).not.toContain('repeat');
+    });
+
+    it('should skip nudge in subagent sessions when skipNudgeInSubagents is true', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({ skipNudgeInSubagents: true });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'parent-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'parent-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
+
+      mockClient.session.promptAsync.mockClear();
+
+      await plugin['chat.message']({ sessionID: 'agent$$abc123-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'agent$$abc123-session' } } });
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+
+    it('should nudge in subagent sessions when skipNudgeInSubagents is false', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({ skipNudgeInSubagents: false });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'agent$$abc123-session' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'agent$$abc123-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
   });
 
