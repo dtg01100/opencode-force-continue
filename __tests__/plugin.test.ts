@@ -1059,7 +1059,30 @@ describe('ContinuePlugin', () => {
 
       await toolDef.execute({ question: 'Question 2' }, toolCtx);
 
-      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+      await plugin['chat.message']({ sessionID: 'test-session' });
+
+      const thirdResult = await toolDef.execute({ question: 'Question 3' }, toolCtx);
+      expect(thirdResult).toBe('Autopilot resolved guidance question.');
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(3);
+    });
+
+    it('should fall back when promptAsync fails', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      mockClient.session.promptAsync = vi.fn().mockRejectedValue(new Error('Network error'));
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 3
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.requestGuidance;
+      const result = await toolDef.execute(
+        { question: 'What should I do?' },
+        { sessionID: 'test-session' } as any
+      );
+
+      expect(result).toContain('Auto-continue paused until user responds.');
     });
   });
 
