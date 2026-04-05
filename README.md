@@ -115,9 +115,7 @@ Environment variables take precedence over config file values, which take preced
 
 ## Architecture
 
-### Server-Only Design
-
-The plugin is implemented as a single server file: `force-continue.server.js` (included in the repository). It is intentionally lightweight:
+The plugin is intentionally lightweight:
 
 - All runtime state is kept in-memory per process and keyed by the OpenCode session ID. This keeps the code simple and avoids external storage dependencies.
 - State is cleaned up when a session ends or is deleted; because state is in-memory, multiple server instances do not share session state.
