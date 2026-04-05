@@ -537,10 +537,6 @@ export const createContinuePlugin = (options = {}) => {
         // ─── File Events ────────────────────────────────────────────────────
 
         returnObj.event = async ({ event }) => {
-            if (!config.enableFileTracking) {
-                // Still handle session lifecycle events even if file tracking is off
-            }
-
             if (event.type === "file.edited" && config.enableFileTracking) {
                 const sessionID = event.properties?.sessionID;
                 if (!sessionID) return;
@@ -758,7 +754,7 @@ export const createContinuePlugin = (options = {}) => {
                             msg += `AUTO-CONTINUE CAP REACHED (${count}/${config.maxContinuations}).\n\n`;
                         }
                         msg += "STOP what you are doing. Call 'completionSignal' with status='blocked' and explain why you cannot proceed. Do NOT attempt more work.";
-                    } else if (count >= config.escalationThreshold + 1) {
+                    } else if (count >= config.escalationThreshold) {
                         if (taskSummary) {
                             msg += `You have been forced to continue ${count} times and the previous approach did not resolve the issue. Unfinished tasks:\n${taskSummary}\n\n`;
                         } else {

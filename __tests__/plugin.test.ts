@@ -385,11 +385,11 @@ describe('ContinuePlugin', () => {
         body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
       }));
 
-      // 3rd continue — forces structured plan: list remaining steps then execute
+      // 3rd continue — escalation threshold reached, should show "previous approach not working"
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('3 rounds');
-      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
+      expect(lastCall.body.parts[0].text).toContain('Try a fundamentally different strategy');
     });
 
     it('should escalate further at 4 continuations', async () => {
@@ -529,7 +529,7 @@ describe('ContinuePlugin', () => {
       expect(lastCall.body.parts[0].text).toContain('repeat');
     });
 
-    it('should force structured plan at escalation count >= 3', async () => {
+    it('should escalate at escalation count >= 3', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
@@ -547,7 +547,7 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
     });
 
     it('should return "You may now stop" after completionSignal with no unfinished tasks', async () => {
@@ -870,8 +870,7 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('2 rounds');
-      expect(lastCall.body.parts[0].text).toContain('List the remaining steps');
+      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
     });
 
     it('should disable auto-continue when autoContinueEnabled is false', async () => {
