@@ -86,6 +86,8 @@ export const createContinuePlugin = (options = {}) => {
 
 import { tui } from "../force-continue.tui.js";
 
+export { tui };
+
 export const id = "force-continue";
 
 export const ContinuePlugin = createContinuePlugin();
