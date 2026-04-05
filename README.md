@@ -12,6 +12,18 @@ This plugin solves that by acting as a safety net: when a session goes idle with
 
 ## Installation
 
+### Via opencode.json (recommended)
+
+Add the plugin to your `opencode.json` (global `~/.config/opencode/opencode.json` or project-level `.opencode/opencode.json`):
+
+```json
+{
+  "plugin": ["force-continue@git+https://github.com/dtg01100/opencode-force-continue.git"]
+}
+```
+
+Restart OpenCode. The plugin auto-installs and registers automatically.
+
 ### Quick install (global)
 
 ```bash
@@ -24,56 +36,29 @@ This plugin solves that by acting as a safety net: when a session goes idle with
 ./install.sh --project
 ```
 
-### Git submodule (for tracking changes)
+### Updating
 
-If you want to track this plugin as part of your project and easily pull updates:
+When using the `opencode.json` method, the plugin updates automatically when you restart OpenCode. To pin a specific version:
 
-```bash
-# Add as a git submodule
-git submodule add https://github.com/dtg01100/opencode-force-continue.git .opencode/plugins/force-continue
-
-# Or initialize submodules in an existing clone
-git submodule update --init --recursive
-```
-
-Then copy the plugin to the correct location:
-
-```bash
-# Project-level (recommended for shared teams)
-cp .opencode/plugins/force-continue/force-continue.server.js .opencode/plugins/
-```
-
-To update to the latest version:
-
-```bash
-cd .opencode/plugins/force-continue && git pull
+```json
+{
+  "plugin": ["force-continue@git+https://github.com/dtg01100/opencode-force-continue.git#v1.0.0"]
+}
 ```
 
 ### Uninstall
 
-```bash
-./uninstall.sh
-```
+When using the `opencode.json` method, remove the plugin from the `plugin` array and restart OpenCode.
 
-### Manual install
-
-Copy the plugin files into OpenCode's plugin directory.
-
-**Global** (all projects):
+For manual installations:
 
 ```bash
-mkdir -p ~/.config/opencode/plugins
-cp force-continue.server.js ~/.config/opencode/plugins/
+# Global
+rm ~/.config/opencode/plugins/force-continue.server.js
+
+# Project-level
+rm .opencode/plugins/force-continue.server.js
 ```
-
-**Project-level** (current project only):
-
-```bash
-mkdir -p .opencode/plugins
-cp force-continue.server.js .opencode/plugins/
-```
-
-OpenCode automatically loads any `.js` or `.ts` files from these directories at startup.
 
 ## Usage
 
