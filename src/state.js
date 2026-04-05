@@ -12,7 +12,11 @@ export function updateLastSeen(sessionID) {
 export function readState() {
     const sessions = {};
     for (const [sessionID, meta] of sessionState.entries()) {
-        sessions[sessionID] = Object.assign({}, meta);
+        const copy = Object.assign({}, meta);
+        if (copy.filesModified instanceof Set) {
+            copy.filesModified = Array.from(copy.filesModified);
+        }
+        sessions[sessionID] = copy;
     }
     return { sessions, metrics: metrics.getSummary() };
 }

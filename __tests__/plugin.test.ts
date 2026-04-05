@@ -1251,8 +1251,9 @@ describe('ContinuePlugin', () => {
 
       const state = readState();
       expect(state.sessions['file-track-session'].filesModified).toBeDefined();
-      expect(state.sessions['file-track-session'].filesModified.has('src/a.ts')).toBe(true);
-      expect(state.sessions['file-track-session'].filesModified.has('src/b.ts')).toBe(true);
+      expect(Array.isArray(state.sessions['file-track-session'].filesModified)).toBe(true);
+      expect(state.sessions['file-track-session'].filesModified).toContain('src/a.ts');
+      expect(state.sessions['file-track-session'].filesModified).toContain('src/b.ts');
     });
 
     it('should detect tool call loops', async () => {
@@ -1282,7 +1283,8 @@ describe('ContinuePlugin', () => {
       });
 
       const state = readState();
-      expect(state.sessions['file-event-session'].filesModified.has('src/main.ts')).toBe(true);
+      expect(Array.isArray(state.sessions['file-event-session'].filesModified)).toBe(true);
+      expect(state.sessions['file-event-session'].filesModified).toContain('src/main.ts');
     });
   });
 
@@ -1655,6 +1657,11 @@ describe('createMetricsTracker - all events', () => {
     tracker.record('s1', 'idle.skipped.disabled');
     const summary = tracker.getSummary();
     expect(summary.idleSkippedDisabled).toBe(1);
+  });
+
+  it('should track idle.skipped.subagent', () => {
+    tracker.record('s1', 'idle.skipped.subagent');
+    expect(tracker.getSummary().idleSkippedSubagent).toBe(1);
   });
 
   it('should track messages.empty', () => {
