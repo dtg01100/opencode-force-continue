@@ -225,6 +225,17 @@ function isTaskDone(status) {
     return normalized === "done" || normalized === "completed" || normalized === "complete";
 }
 
+function buildAutopilotPrompt(question, context, options) {
+    let prompt = `You asked for guidance: ${question}\n\n`;
+    if (context) prompt += `Context: ${context}\n\n`;
+    if (options) prompt += `Options: ${options}\n\n`;
+    prompt += `Instead of waiting for user input, make a reasonable decision and proceed.\n`;
+    prompt += `Choose the option that seems most appropriate given the context.\n`;
+    prompt += `If you cannot decide, call completionSignal with status='blocked'.\n`;
+    prompt += `Do NOT ask for guidance again - make a choice and continue.`;
+    return prompt;
+}
+
 // ─── Plugin Factory ─────────────────────────────────────────────────────────
 
 export const createContinuePlugin = (options = {}) => {
