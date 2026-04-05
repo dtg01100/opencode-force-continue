@@ -439,6 +439,7 @@ export const createContinuePlugin = (options = {}) => {
                 meta.errorCount = 0;
                 meta.autoContinuePaused = null;
                 meta.awaitingGuidance = null;
+                meta.toolLoopDetected = false;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
         };
@@ -819,7 +820,20 @@ export const createContinuePlugin = (options = {}) => {
                             if (meta.errorCount >= config.circuitBreakerThreshold) {
                                 metrics.record(sessionID, "circuit.breaker.trip");
                                 meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
-                                sessionState.set(sessionID, meta);
+            if (config.enableToolLoopDetection) {
+                const history = meta.toolCallHistory;
+                if (history.length >= 4) {
+                    const recent = history.slice(-4);
+                    const allSame = recent.every(t => t.tool === recent[0].tool && JSON.stringify(t.args) === JSON.stringify(recent[0].args));
+                    if (allSame) {
+                        metrics.record(sessionID, "tool.loop.detected");
+                        meta.toolLoopDetected = true;
+                        log("warn", "Tool call loop detected", { sessionID, tool: recent[0].tool });
+                    }
+                }
+            }
+
+            sessionState.set(sessionID, meta);
                                 log("warn", "Circuit breaker tripped", { sessionID, errorCount: meta.errorCount });
                             }
                             return;
@@ -837,7 +851,7 @@ export const createContinuePlugin = (options = {}) => {
                         const prevText = meta.lastAssistantText || null;
                         const progress = madeProgress(contextText, prevText);
                         const responseHistory = meta.responseHistory || [];
-                        const inLoop = config.enableLoopDetection && contextText ? isInLoop(contextText, responseHistory) : false;
+                        const inLoop = (config.enableLoopDetection && contextText ? isInLoop(contextText, responseHistory) : false) || meta.toolLoopDetected;
 
                         if (progress && meta.continuationCount > 0) {
                             meta.continuationCount = 0;
@@ -850,16 +864,6 @@ export const createContinuePlugin = (options = {}) => {
                             responseHistory.unshift(contextText);
                             if (responseHistory.length > 5) responseHistory.length = 5;
                             meta.responseHistory = responseHistory;
-                        }
-
-                        // Circuit breaker
-                        meta.errorCount = meta.errorCount || 0;
-                        if (meta.errorCount >= config.circuitBreakerThreshold) {
-                            metrics.record(sessionID, "circuit.breaker.trip");
-                            meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
-                            sessionState.set(sessionID, meta);
-                            log("warn", "Circuit breaker tripped", { sessionID, errorCount: meta.errorCount });
-                            return;
                         }
 
                         sessionState.set(sessionID, meta);
