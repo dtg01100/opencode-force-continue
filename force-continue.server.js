@@ -131,6 +131,8 @@ function createMetricsTracker() {
         totalIdleSkippedDisabled: 0,
         totalMessagesEmpty: 0,
         totalLastMsgNotAssistant: 0,
+        totalAutopilotAttempts: 0,
+        totalAutopilotFallbacks: 0,
         promptContinue: 0,
         promptEscalation: 0,
         promptLoopBreak: 0,
@@ -164,6 +166,8 @@ function createMetricsTracker() {
                 case "prompt.escalation": metrics.promptEscalation++; break;
                 case "prompt.loop.break": metrics.promptLoopBreak++; break;
                 case "prompt.completion.nudge": metrics.promptCompletionNudge++; break;
+                case "autopilot.attempt": metrics.totalAutopilotAttempts++; break;
+                case "autopilot.fallback": metrics.totalAutopilotFallbacks++; break;
             }
         },
             getSummary() {
@@ -189,6 +193,8 @@ function createMetricsTracker() {
                     idleSkippedDisabled: metrics.totalIdleSkippedDisabled,
                     messagesEmpty: metrics.totalMessagesEmpty,
                     lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
+                    totalAutopilotAttempts: metrics.totalAutopilotAttempts,
+                    totalAutopilotFallbacks: metrics.totalAutopilotFallbacks,
                     promptContinue: metrics.promptContinue,
                     promptEscalation: metrics.promptEscalation,
                     promptLoopBreak: metrics.promptLoopBreak,
