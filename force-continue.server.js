@@ -19,6 +19,8 @@ const DEFAULT_CONFIG = {
     logToStdout: false,
     ignoreTools: ["read", "glob", "grep"],
     dangerousCommands: ["rm -rf /", "rm -rf ~", "mkfs", "dd if=/dev/zero", "> /dev/sda"],
+    autopilotEnabled: false,
+    autopilotMaxAttempts: 3,
 };
 
 function resolveConfig() {
@@ -35,6 +37,10 @@ function resolveConfig() {
     if (process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== undefined) envConfig.enableTaskTracking = process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== undefined) envConfig.enableCompletionSummary = process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== "false";
     if (process.env.FORCE_CONTINUE_LOG_TO_STDOUT !== undefined) envConfig.logToStdout = process.env.FORCE_CONTINUE_LOG_TO_STDOUT !== "false";
+    if (process.env.FORCE_CONTINUE_AUTOPILOT_ENABLED !== undefined)
+        envConfig.autopilotEnabled = process.env.FORCE_CONTINUE_AUTOPILOT_ENABLED !== "false";
+    if (process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS)
+        envConfig.autopilotMaxAttempts = parseInt(process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS, 10);
 
     let fileConfig = {};
     const configPaths = [
