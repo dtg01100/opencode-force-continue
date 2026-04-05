@@ -429,9 +429,11 @@ export const createContinuePlugin = (options = {}) => {
 
                                 log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
                                 metrics.record(sessionID, "autopilot.attempt");
-                                return null;
+                                return "Autopilot resolved guidance question.";
                         } catch (e) {
                             log("error", "Autopilot failed", { error: e?.stack ?? e });
+                            meta.autopilotAttempts--;
+                            sessionState.set(sessionID, meta);
                             metrics.record(sessionID, "autopilot.fallback");
                         }
                         }
