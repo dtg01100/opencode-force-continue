@@ -86,6 +86,8 @@ Behavior summary:
 | `FORCE_CONTINUE_ENABLE_TASK_TRACKING` | `true` | Query task hooks for unfinished work |
 | `FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY` | `true` | Log completion summary on session end |
 | `FORCE_CONTINUE_LOG_TO_STDOUT` | `false` | Log plugin activity to stdout in addition to OpenCode's logger |
+| `FORCE_CONTINUE_AUTOPILOT_ENABLED` | `false` | Enable autopilot mode for auto-answering guidance requests |
+| `FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS` | `3` | Max auto-answer attempts before falling back to user input |
 
 ### Config File
 
@@ -212,6 +214,17 @@ Ask the user for clarification. Pauses auto-continue until the user responds.
 ```
 requestGuidance(question='Should I use approach A or B?', context?)
 ```
+
+### Autopilot Mode
+
+When `FORCE_CONTINUE_AUTOPILOT_ENABLED=true`, the plugin automatically answers `requestGuidance` calls instead of waiting for user input. The AI makes autonomous decisions and continues working.
+
+Use cases:
+- Long-running tasks where the AI can reasonably decide on its own
+- Autonomous research mode
+- CI/automated environments without human guidance availability
+
+If max attempts is reached, falls back to normal behavior requiring user input.
 
 ### pauseAutoContinue
 
