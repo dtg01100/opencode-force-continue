@@ -24,6 +24,31 @@ This plugin solves that by acting as a safety net: when a session goes idle with
 ./install.sh --project
 ```
 
+### Git submodule (for tracking changes)
+
+If you want to track this plugin as part of your project and easily pull updates:
+
+```bash
+# Add as a git submodule
+git submodule add https://github.com/dtg01100/opencode-force-continue.git .opencode/plugins/force-continue
+
+# Or initialize submodules in an existing clone
+git submodule update --init --recursive
+```
+
+Then copy the plugin to the correct location:
+
+```bash
+# Project-level (recommended for shared teams)
+cp .opencode/plugins/force-continue/force-continue.server.js .opencode/plugins/
+```
+
+To update to the latest version:
+
+```bash
+cd .opencode/plugins/force-continue && git pull
+```
+
 ### Uninstall
 
 ```bash
