@@ -28,7 +28,7 @@ function writeAutopilotState(state) {
 
 export const id = "force-continue";
 
-export const tui = async (api) => {
+export const tui = async (api, options, meta) => {
     api.command.register(() => {
         const state = readAutopilotState();
         return [
