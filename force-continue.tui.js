@@ -52,3 +52,5 @@ export const tui = async (api, options, meta) => {
         ];
     });
 };
+
+export default { id, tui };

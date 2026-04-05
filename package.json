@@ -3,6 +3,14 @@
   "version": "1.0.1",
   "type": "module",
   "main": "force-continue.server.js",
+  "exports": {
+    "./server": {
+      "import": "./force-continue.server.js"
+    },
+    "./tui": {
+      "import": "./force-continue.tui.js"
+    }
+  },
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run"
