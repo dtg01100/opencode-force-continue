@@ -1,7 +1,8 @@
 {
   "name": "opencode-force-continue",
-  "private": true,
+  "version": "1.0.0",
   "type": "module",
+  "main": "force-continue.server.js",
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run"
