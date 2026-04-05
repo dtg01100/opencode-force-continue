@@ -1,5 +1,5 @@
 {
-  "name": "opencode-force-continue",
+  "name": "force-continue",
   "version": "1.0.0",
   "type": "module",
   "main": "force-continue.server.js",
