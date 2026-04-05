@@ -50,6 +50,7 @@ describe('ContinuePlugin', () => {
   let mockCtx: any;
 
   beforeEach(() => {
+    process.env.FORCE_CONTINUE_NUDGE_DELAY_MS = '0';
     vi.resetModules();
     mockClient = {
       session: {
