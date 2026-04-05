@@ -226,6 +226,9 @@ function isTaskDone(status) {
 }
 
 function buildAutopilotPrompt(question, context, options) {
+    if (!question || typeof question !== "string") {
+        throw new Error("buildAutopilotPrompt: question is required and must be a string");
+    }
     let prompt = `You asked for guidance: ${question}\n\n`;
     if (context) prompt += `Context: ${context}\n\n`;
     if (options) prompt += `Options: ${options}\n\n`;
