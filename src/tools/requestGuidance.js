@@ -5,7 +5,7 @@ import { buildAutopilotPrompt, getAutopilotEnabled, getAutopilotMaxAttempts } fr
 
 export function createRequestGuidanceTool(ctx, config, client, log) {
     return tool({
-        description: "Use this tool when you are uncertain about how to proceed and need clarification from the user before continuing.",
+        description: "Use this tool when you are uncertain about how to proceed and need clarification from the user. Prefer this tool over asking questions in your text response — it provides a structured way to record what you need.",
         args: {
             question: tool.schema.string().describe("The specific question or clarification you need."),
             context: tool.schema.string().optional().describe("Additional context about why you're asking."),
@@ -24,9 +24,14 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                 if (autopilotEnabled) {
                     const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
                     if (meta.autopilotAttempts >= autopilotMaxAttempts) {
-                        log("info", "Autopilot max attempts reached, waiting for user", { sessionID });
+                        log("info", "Autopilot max attempts reached, tripping circuit breaker", { sessionID });
                         metrics.record(sessionID, "autopilot.fallback");
-                        return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Waiting for user input.`;
+                        metrics.record(sessionID, "circuit.breaker.trip");
+                        // Trip circuit breaker - stop auto-continuing entirely
+                        meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
+                        sessionState.set(sessionID, meta);
+                        log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: meta.autopilotAttempts });
+                        return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Auto-continue paused.`;
                     }
 
                     try {

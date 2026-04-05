@@ -1,8 +1,25 @@
 import { sessionState, updateLastSeen, isTaskDone, isSubagentSession } from "../state.js";
 import { metrics } from "../metrics.js";
-import { getAutopilotEnabled, getAutopilotMaxAttempts } from "../autopilot.js";
+import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt } from "../autopilot.js";
 
 const COMPLETION_KEYWORDS = /\b(done|finished|complete|all set|that.?s all|all done|wrapping up|concluded)\b/i;
+
+// Detect if text contains a question that suggests the AI is waiting for user input
+const QUESTION_PATTERN = /\?/g;
+const WAITING_INDICATORS = /\b(should i|would you|do you want|can i|what do you|which|how would you|are you sure|does this|would this)\b/i;
+
+function containsQuestion(text) {
+    if (!text) return false;
+    const questionMarks = (text.match(QUESTION_PATTERN) || []).length;
+    const waitingWords = WAITING_INDICATORS.test(text);
+    return questionMarks > 0 || waitingWords;
+}
+
+function extractQuestions(text) {
+    if (!text) return [];
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    return sentences.filter(s => s.includes('?') || WAITING_INDICATORS.test(s)).map(s => s.trim());
+}
 
 function getLastAssistantText(messages) {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -53,17 +70,24 @@ function isInLoop(currentText, history) {
     return false;
 }
 
-function buildContinuePrompt(count, taskSummary, contextText) {
+function buildContinuePrompt(count, taskSummary, contextText, pendingGuidance) {
     let msg = "";
     if (taskSummary) {
-        msg += `Continue working — ${taskSummary.length} unfinished task(s) remain:\n${taskSummary}`;
+        msg += `Continue working — ${taskSummary.length} unfinished task(s) remain:\n${taskSummary}\n\n`;
+        msg += `Take the next concrete action now. Do not restate your plan — execute the next step.`;
     } else {
-        msg += "Continue working on your current task.";
+        msg += "Continue working on your current task. Take the next concrete action now.";
+    }
+    if (pendingGuidance) {
+        msg += `\n\nYou have a pending guidance request:\nQ: ${pendingGuidance.question}`;
+        if (pendingGuidance.context) msg += `\nContext: ${pendingGuidance.context}`;
+        if (pendingGuidance.options) msg += `\nOptions: ${pendingGuidance.options}`;
+        msg += "\n\nDecide on an answer yourself and proceed, or wait for user input if you cannot.";
     }
     if (contextText) {
         msg += `\n\nYour last response was:\n${contextText}`;
     }
-    msg += "\n\nPlease continue or call 'completionSignal' if you are blocked.";
+    msg += "\n\nPlease continue working or call 'completionSignal' with status='blocked' if you cannot proceed.";
     return msg;
 }
 
@@ -75,24 +99,24 @@ function buildEscalationPrompt(count, taskSummary, contextText, inLoop, config) 
         } else {
             msg += `AUTO-CONTINUE CAP REACHED (${count}/${config.maxContinuations}).\n\n`;
         }
-        msg += "STOP what you are doing. Call 'completionSignal' with status='blocked' and explain why you cannot proceed. Do NOT attempt more work.";
+        msg += "STOP. Do NOT attempt any more work. Call 'completionSignal' with status='blocked' and explain exactly what you were unable to complete and why.";
     } else if (count >= config.escalationThreshold) {
         if (taskSummary) {
-            msg += `You have been forced to continue ${count} times and the previous approach did not resolve the issue. Unfinished tasks:\n${taskSummary}\n\n`;
+            msg += `You have been forced to continue ${count} times without making progress. Unfinished tasks:\n${taskSummary}\n\n`;
         } else {
             msg += `You have been forced to continue ${count} times without signaling completion.\n\n`;
         }
-        msg += "The previous approach is not working. Try a fundamentally different strategy. If you cannot make progress with a new approach, call 'completionSignal' with status='blocked' and explain why.";
+        msg += "Your current approach is not working. Take a step back, reassess, and try a fundamentally different strategy. If no new approach is available, call 'completionSignal' with status='blocked' and explain what you've tried and why it failed.";
     } else {
         if (taskSummary) {
             msg += `You have been continuing for ${count} rounds. Unfinished tasks:\n${taskSummary}\n\n`;
         } else {
             msg += `You have been continuing for ${count} rounds without signaling completion.\n\n`;
         }
-        msg += "List the remaining steps needed to complete this task, then execute the next one. If the task is already done, call 'completionSignal' with status='completed'. If you cannot proceed, call 'completionSignal' with status='blocked' and explain why.";
+        msg += "Briefly identify what remains, then take the next action. When fully done, call 'completionSignal' with status='completed'. If you are stuck, call 'completionSignal' with status='blocked' and explain what is preventing progress.";
     }
     if (inLoop) {
-        msg += "\n\nWARNING: Your recent responses appear to repeat earlier content. Break the loop by taking a different approach.";
+        msg += "\n\nWARNING: Your recent responses appear to repeat earlier content. You must break the loop by taking a qualitatively different approach.";
     }
     if (contextText) {
         msg += `\n\nYour last response was:\n${contextText}`;
@@ -101,9 +125,12 @@ function buildEscalationPrompt(count, taskSummary, contextText, inLoop, config) 
 }
 
 function buildLoopBreakPrompt(contextText) {
-    let msg = "WARNING: Your responses are repeating. You appear to be stuck in a loop.\n\n";
-    msg += "Stop and try a completely different approach. ";
-    msg += "If you cannot make progress, call 'completionSignal' with status='blocked' and explain why.";
+    let msg = "LOOP DETECTED: Your recent responses have been repeating or rehashing the same content.\n\n";
+    msg += "Do NOT repeat your previous approach. Instead:\n";
+    msg += "1. Identify what specifically is not working.\n";
+    msg += "2. Choose a qualitatively different strategy.\n";
+    msg += "3. Take the first action of the new approach.\n";
+    msg += "If you cannot identify a viable new approach, call 'completionSignal' with status='blocked' and explain what you've tried and why it isn't working.";
     if (contextText) {
         msg += `\n\nYour last response was:\n${contextText}`;
     }
@@ -166,6 +193,45 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             const taskSummary = hasTasks ? unfinishedTasks.map(t => `- [${t.status}] ${t.title || t.id}`).join("\n") : null;
 
+            // Check if AI asked a question and is waiting for user input
+            const aiAskedQuestion = containsQuestion(contextText);
+            const autopilotEnabled = getAutopilotEnabled(config);
+
+            if (aiAskedQuestion) {
+                if (autopilotEnabled) {
+                    // Autopilot: AI asked a question, auto-answer it
+                    const questions = extractQuestions(contextText);
+                    const questionText = questions.length > 0 ? questions.join(' ') : contextText;
+                    meta.autopilotAttempts = (meta.autopilotAttempts || 0) + 1;
+                    const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
+
+                    if (meta.autopilotAttempts > autopilotMaxAttempts) {
+                        log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
+                        metrics.record(sessionID, "autopilot.fallback.question");
+                        metrics.record(sessionID, "circuit.breaker.trip");
+                        // Trip circuit breaker - stop auto-continuing entirely
+                        meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
+                        sessionState.set(sessionID, meta);
+                        log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: meta.autopilotAttempts });
+                    } else {
+                        sessionState.set(sessionID, meta);
+                        const prompt = buildAutopilotPrompt(
+                            `You asked: ${questionText}`,
+                            `Your last response suggested you were waiting for an answer.`,
+                            "Choose a reasonable answer and proceed with your work."
+                        );
+                        metrics.record(sessionID, "autopilot.question.attempt");
+                        log("info", "Autopilot answering AI question", { sessionID, questions });
+                        await sendPrompt(sessionID, prompt);
+                    }
+                } else {
+                    // Autopilot disabled - AI is genuinely waiting for user input, don't nudge
+                    metrics.record(sessionID, "idle.skipped.awaiting.answer");
+                    log("info", "Idle skipped: AI asked a question and autopilot is disabled", { sessionID });
+                }
+                return;
+            }
+
             if (meta.continuationCount >= config.maxContinuations) {
                 metrics.record(sessionID, "escalation");
                 metrics.record(sessionID, "prompt.escalation");
@@ -185,10 +251,11 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             } else if (contextText && COMPLETION_KEYWORDS.test(contextText) && meta.continuationCount <= 2) {
                 metrics.record(sessionID, "prompt.completion.nudge");
                 log("info", "sent completion nudge", { sessionID });
-                await sendPrompt(sessionID, "You appear to have finished but did not call completionSignal. Please call it now.");
+                await sendPrompt(sessionID, "Your response suggests you are done, but you did not call 'completionSignal'. If your work is complete, call 'completionSignal' with status='completed'. If there is more to do, continue working. If you are stuck, call 'completionSignal' with status='blocked'.");
             } else {
                 metrics.record(sessionID, "prompt.continue");
-                const msg = buildContinuePrompt(meta.continuationCount, taskSummary, contextText);
+                const pendingGuidance = meta.awaitingGuidance || null;
+                const msg = buildContinuePrompt(meta.continuationCount, taskSummary, contextText, pendingGuidance);
                 log("info", "sent continue prompt", { sessionID, count: meta.continuationCount });
                 await sendPrompt(sessionID, msg);
             }
@@ -294,11 +361,10 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
 
-            if (meta.awaitingGuidance) {
-                metrics.record(sessionID, "idle.skipped.guidance");
-                log("debug", "idle skipped: awaiting guidance", { sessionID });
-                return;
-            }
+            // Note: We no longer skip nudges when awaitingGuidance is set.
+            // When autopilot is OFF, the AI may request guidance but should still
+            // receive continue nudges to keep working after the user responds.
+            // The nudge will include the pending guidance question if applicable.
 
             if (config.skipNudgeInSubagents && isSubagentSession(sessionID)) {
                 metrics.record(sessionID, "idle.skipped.subagent");

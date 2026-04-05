@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'path';
+import { existsSync, unlinkSync } from 'fs';
 
 vi.mock('@opencode-ai/plugin', () => {
   const chainable = () => ({ optional: () => ({ describe: () => ({}) }), describe: () => ({}) });
@@ -389,8 +391,8 @@ describe('ContinuePlugin', () => {
       // 3rd continue — escalation threshold reached, should show "previous approach not working"
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
-      expect(lastCall.body.parts[0].text).toContain('Try a fundamentally different strategy');
+      expect(lastCall.body.parts[0].text).toContain('current approach is not working');
+      expect(lastCall.body.parts[0].text).toContain('fundamentally different strategy');
     });
 
     it('should escalate further at 4 continuations', async () => {
@@ -492,8 +494,8 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'forgot-signal' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('did not call completionSignal');
-      expect(lastCall.body.parts[0].text).toContain('call it now');
+      expect(lastCall.body.parts[0].text).toContain('did not call');
+      expect(lastCall.body.parts[0].text).toContain("status='completed'");
     });
 
     it('should warn about loop when response repeats content from 2+ turns ago', async () => {
@@ -526,7 +528,7 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-detect-session' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('WARNING');
+      expect(lastCall.body.parts[0].text).toContain('LOOP DETECTED');
       expect(lastCall.body.parts[0].text).toContain('repeat');
     });
 
@@ -550,7 +552,7 @@ describe('ContinuePlugin', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'two-in-a-row-session' } } });
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('loop');
+      expect(lastCall.body.parts[0].text).toContain('LOOP DETECTED');
     });
 
     it('should escalate at escalation count >= 3', async () => {
@@ -570,7 +572,7 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
+      expect(lastCall.body.parts[0].text).toContain('current approach is not working');
     });
 
     it('should return "You may now stop" after completionSignal with no unfinished tasks', async () => {
@@ -893,7 +895,7 @@ describe('ContinuePlugin', () => {
       }
 
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('previous approach is not working');
+      expect(lastCall.body.parts[0].text).toContain('current approach is not working');
     });
 
     it('should disable auto-continue when autoContinueEnabled is false', async () => {
@@ -1027,6 +1029,28 @@ describe('ContinuePlugin', () => {
       });
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-session' } } });
 
+      // Nudges should still be sent even when guidance is pending (autopilot off)
+      // The nudge will include the pending guidance question
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        path: { id: 'guidance-session' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('pending guidance request') }] }
+      });
+    });
+
+    it('should not nudge when AI asks a question in text and autopilot is off', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-no-auto-session' } } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Should I use approach A or B?' }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-no-auto-session' } } });
+
+      // No nudge should be sent - AI is waiting for user input
       expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
     });
 
@@ -1057,6 +1081,13 @@ describe('ContinuePlugin', () => {
   describe('autopilot', () => {
     beforeEach(() => {
       vi.resetModules();
+      // Clean up autopilot state file to avoid test interference
+      const autopilotPath = join(process.cwd(), '.opencode', 'force-continue-store', 'autopilot.json');
+      try {
+        if (existsSync(autopilotPath)) {
+          unlinkSync(autopilotPath);
+        }
+      } catch {}
     });
 
     it('should generate autonomous answer when autopilot enabled', async () => {
@@ -1075,7 +1106,7 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         path: { id: 'test-session' },
-        body: { parts: [{ type: 'text', text: expect.stringContaining('You asked for guidance') }] }
+        body: { parts: [{ type: 'text', text: expect.stringContaining('AUTONOMOUS DECISION REQUIRED') }] }
       });
       expect(result).toBe('Autopilot resolved guidance question.');
     });
@@ -1097,7 +1128,15 @@ describe('ContinuePlugin', () => {
       const result = await toolDef.execute({ question: 'Third question?' }, toolCtx);
 
       expect(result).toContain('Autopilot limit reached');
-      expect(result).toContain('Waiting for user input');
+      expect(result).toContain('Auto-continue paused');
+
+      // Circuit breaker should be tripped
+      const { readState } = await import('../force-continue.server.js');
+      const state = readState();
+      expect(state.sessions['test-session'].autoContinuePaused).toEqual({
+        reason: 'autopilot_max_attempts',
+        timestamp: expect.any(Number)
+      });
     });
 
     it('should reset autopilot attempts on user message', async () => {
@@ -1141,6 +1180,95 @@ describe('ContinuePlugin', () => {
       );
 
       expect(result).toContain('Auto-continue paused until user responds.');
+    });
+
+    it('should auto-answer AI questions in text when autopilot enabled', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 3
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-session' } } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'I should use approach A or B. Which one should I choose?' }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-session' } } });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        path: { id: 'question-session' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('You asked:') }] }
+      });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        path: { id: 'question-session' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('Choose a reasonable answer') }] }
+      });
+    });
+
+    it('should fall back to user after max attempts on AI questions', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 2
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-fallback-session' } } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Should I do X or Y?' }] }]
+      });
+
+      // First attempt - autopilot answers
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
+
+      // Second idle - second attempt
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+
+      // Third idle - circuit breaker should trip, no more nudges
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
+      // Should still be 2 calls - circuit breaker prevented the third
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+
+      // Circuit breaker should be tripped
+      const { readState } = await import('../force-continue.server.js');
+      const state = readState();
+      expect(state.sessions['question-fallback-session'].autoContinuePaused).toEqual({
+        reason: 'autopilot_max_attempts',
+        timestamp: expect.any(Number)
+      });
+    });
+
+    it('should reset autopilot attempts on user message for AI questions', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 1
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'reset-session' } } } });
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'What should I do next?' }] }]
+      });
+
+      // First question - autopilot answers
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
+
+      // User sends a message (resets attempts)
+      await plugin['chat.message']({ sessionID: 'reset-session' });
+      mockClient.session.promptAsync.mockClear();
+
+      // AI asks another question - should still autopilot since attempts were reset
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
     });
   });
 
