@@ -530,6 +530,29 @@ describe('ContinuePlugin', () => {
       expect(lastCall.body.parts[0].text).toContain('repeat');
     });
 
+    it('should detect a loop when the same response appears twice in a row', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({ enableLoopDetection: true });
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'two-in-a-row-session' });
+
+      // First response — stored in history, no loop yet
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'I will now fix the bug.' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'two-in-a-row-session' } } });
+
+      // Second identical response — history[0] matches current, loop detected
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'I will now fix the bug.' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'two-in-a-row-session' } } });
+
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.body.parts[0].text).toContain('loop');
+    });
+
     it('should escalate at escalation count >= 3', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
@@ -537,8 +560,7 @@ describe('ContinuePlugin', () => {
 
       await plugin['chat.message']({ sessionID: 'plan-session' });
 
-      // Use identical responses — no progress detected, no loop (need 2+ history entries for loop)
-      // so counter increments to 3 normally
+      // Use identical responses — loop detected on 2nd event (count=2), escalation wins on 3rd (count=3 >= threshold)
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working on the task' }] }]
       });

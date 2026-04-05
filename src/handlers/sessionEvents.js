@@ -37,14 +37,14 @@ function madeProgress(currentText, previousText) {
 }
 
 function isInLoop(currentText, history) {
-    if (!currentText || history.length < 2) return false;
+    if (!currentText || history.length < 1) return false;
     const currentNorm = currentText.toLowerCase().trim();
-    for (let i = 1; i < history.length; i++) {
+    for (let i = 0; i < history.length; i++) {
         const prev = history[i].toLowerCase().trim();
         if (currentNorm === prev || currentNorm.startsWith(prev) || prev.startsWith(currentNorm)) return true;
     }
     const currentWords = new Set(currentNorm.split(/\s+/));
-    for (let i = 1; i < history.length; i++) {
+    for (let i = 0; i < history.length; i++) {
         const prevWords = history[i].toLowerCase().split(/\s+/);
         let overlap = 0;
         for (const w of prevWords) { if (currentWords.has(w)) overlap++; }
