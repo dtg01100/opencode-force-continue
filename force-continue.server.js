@@ -486,6 +486,7 @@ export const createContinuePlugin = (options = {}) => {
                 meta.autoContinuePaused = null;
                 meta.awaitingGuidance = null;
                 meta.toolLoopDetected = false;
+                meta.autopilotAttempts = 0;
                 sessionState.set(sessionID, meta);
             } catch (e) { /* best-effort */ }
         };
