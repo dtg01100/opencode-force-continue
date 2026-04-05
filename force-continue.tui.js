@@ -41,11 +41,25 @@ export const tui = async (api, options, meta) => {
                 category: "Force Continue",
                 onSelect: () => {
                     const newEnabled = !state.enabled;
-                    writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
-                    api.ui.toast({
-                        message: `Autopilot ${newEnabled ? "enabled" : "disabled"}`,
-                        variant: "info",
-                    });
+                    if (newEnabled) {
+                        api.ui.DialogConfirm({
+                            title: "Enable Autopilot",
+                            message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
+                            onConfirm: () => {
+                                writeAutopilotState({ enabled: true, timestamp: Date.now() });
+                                api.ui.toast({
+                                    message: "Autopilot enabled",
+                                    variant: "warning",
+                                });
+                            },
+                        });
+                    } else {
+                        writeAutopilotState({ enabled: false, timestamp: Date.now() });
+                        api.ui.toast({
+                            message: "Autopilot disabled",
+                            variant: "info",
+                        });
+                    }
                 },
             },
         ];
