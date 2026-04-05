@@ -11,6 +11,7 @@ const DEFAULT_CONFIG = {
     enableToolLoopDetection: true,
     autoContinueEnabled: true,
     cooldownMs: 0,
+    nudgeDelayMs: 2000,
     circuitBreakerThreshold: 10,
     enableFileTracking: true,
     enableTaskTracking: true,
@@ -28,6 +29,7 @@ function resolveConfig() {
     if (process.env.FORCE_CONTINUE_ENABLE_TOOL_LOOP_DETECTION !== undefined) envConfig.enableToolLoopDetection = process.env.FORCE_CONTINUE_ENABLE_TOOL_LOOP_DETECTION !== "false";
     if (process.env.FORCE_CONTINUE_AUTO_CONTINUE !== undefined) envConfig.autoContinueEnabled = process.env.FORCE_CONTINUE_AUTO_CONTINUE !== "false";
     if (process.env.FORCE_CONTINUE_COOLDOWN_MS) envConfig.cooldownMs = parseInt(process.env.FORCE_CONTINUE_COOLDOWN_MS, 10);
+    if (process.env.FORCE_CONTINUE_NUDGE_DELAY_MS) envConfig.nudgeDelayMs = parseInt(process.env.FORCE_CONTINUE_NUDGE_DELAY_MS, 10);
     if (process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD) envConfig.circuitBreakerThreshold = parseInt(process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD, 10);
     if (process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== undefined) envConfig.enableFileTracking = process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== undefined) envConfig.enableTaskTracking = process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== "false";
@@ -790,6 +792,14 @@ export const createContinuePlugin = (options = {}) => {
                 };
 
                 const sendPrompt = async (text) => {
+                    if (config.nudgeDelayMs > 0) {
+                        await new Promise(resolve => setTimeout(resolve, config.nudgeDelayMs));
+                        const meta = sessionState.get(sessionID);
+                        if (meta?.autoContinuePaused) {
+                            log("debug", "nudge suppressed after delay", { sessionID, reason: meta.autoContinuePaused.reason });
+                            return;
+                        }
+                    }
                     await client.session.promptAsync({
                         path: { id: sessionID },
                         body: { parts: [{ type: "text", text }] }
