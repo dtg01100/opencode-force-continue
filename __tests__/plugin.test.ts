@@ -996,6 +996,73 @@ describe('ContinuePlugin', () => {
     });
   });
 
+  describe('autopilot', () => {
+    beforeEach(() => {
+      vi.resetModules();
+    });
+
+    it('should generate autonomous answer when autopilot enabled', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 3
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.requestGuidance;
+      const result = await toolDef.execute(
+        { question: 'Should I use A or B?', context: 'Building a feature', options: 'A or B' },
+        { sessionID: 'test-session' } as any
+      );
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+        path: { id: 'test-session' },
+        body: { parts: [{ type: 'text', text: expect.stringContaining('You asked for guidance') }] }
+      });
+      expect(result).toBe('Autopilot resolved guidance question.');
+    });
+
+    it('should fall back after max autopilot attempts', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 2
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.requestGuidance;
+      const toolCtx = { sessionID: 'test-session' } as any;
+
+      await toolDef.execute({ question: 'First question?' }, toolCtx);
+      await toolDef.execute({ question: 'Second question?' }, toolCtx);
+
+      const result = await toolDef.execute({ question: 'Third question?' }, toolCtx);
+
+      expect(result).toContain('Autopilot limit reached');
+      expect(result).toContain('Waiting for user input');
+    });
+
+    it('should reset autopilot attempts on user message', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({
+        autopilotEnabled: true,
+        autopilotMaxAttempts: 1
+      });
+      const plugin = await createPlugin(mockCtx);
+
+      const toolDef = plugin.tool.requestGuidance;
+      const toolCtx = { sessionID: 'test-session' } as any;
+
+      await toolDef.execute({ question: 'Question 1' }, toolCtx);
+
+      await plugin['chat.message']({ sessionID: 'test-session' });
+
+      await toolDef.execute({ question: 'Question 2' }, toolCtx);
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('pauseAutoContinue tool', () => {
     it('should pause auto-continue temporarily', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
