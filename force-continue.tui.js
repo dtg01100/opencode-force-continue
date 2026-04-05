@@ -39,7 +39,6 @@ export const tui = async (api, options, meta) => {
                     ? "Autopilot is ON - AI makes decisions autonomously"
                     : "Autopilot is OFF - AI asks for guidance",
                 category: "Force Continue",
-                suggested: true,
                 onSelect: () => {
                     const newEnabled = !state.enabled;
                     writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
