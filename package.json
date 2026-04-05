@@ -4,6 +4,9 @@
   "type": "module",
   "main": "force-continue.server.js",
   "exports": {
+    ".": {
+      "import": "./force-continue.server.js"
+    },
     "./server": {
       "import": "./force-continue.server.js"
     },
