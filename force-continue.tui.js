@@ -3,7 +3,7 @@ import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 export const id = "force-continue";
 
 export const tui = async (api, options, meta) => {
-    api.command.register(() => {
+    const getCommands = () => {
         const state = readAutopilotState() ?? { enabled: false, timestamp: null };
         return [
             {
@@ -27,6 +27,12 @@ export const tui = async (api, options, meta) => {
                                     message: "Autopilot enabled",
                                     variant: "warning",
                                 });
+                                // attempt to refresh command list for TUI
+                                if (api.command && typeof api.command.refresh === 'function') {
+                                    try { api.command.refresh(); } catch (e) { /* ignore */ }
+                                } else if (api.command && typeof api.command.register === 'function') {
+                                    try { api.command.register(getCommands); } catch (e) { /* ignore */ }
+                                }
                             },
                         });
                     } else {
@@ -35,11 +41,19 @@ export const tui = async (api, options, meta) => {
                             message: "Autopilot disabled",
                             variant: "info",
                         });
+                        // attempt to refresh command list for TUI
+                        if (api.command && typeof api.command.refresh === 'function') {
+                            try { api.command.refresh(); } catch (e) { /* ignore */ }
+                        } else if (api.command && typeof api.command.register === 'function') {
+                            try { api.command.register(getCommands); } catch (e) { /* ignore */ }
+                        }
                     }
                 },
             },
         ];
-    });
+    };
+
+    api.command.register(getCommands);
 };
 
 export default { id, tui };
