@@ -58,6 +58,34 @@ function createMetricsTracker() {
                 case "autopilot.fallback": metrics.totalAutopilotFallbacks++; break;
             }
         },
+        reset() {
+            metrics.totalSessions = 0;
+            metrics.totalContinuations = 0;
+            metrics.totalLoopDetections = 0;
+            metrics.totalToolLoopDetections = 0;
+            metrics.totalCircuitBreakerTrips = 0;
+            metrics.totalEscalations = 0;
+            metrics.totalCompletions = 0;
+            metrics.totalBlocks = 0;
+            metrics.totalInterrupts = 0;
+            metrics.totalIdleEvents = 0;
+            metrics.totalIdleSkippedComplete = 0;
+            metrics.totalIdleSkippedPaused = 0;
+            metrics.totalIdleSkippedGuidance = 0;
+            metrics.totalIdleSkippedBabysitter = 0;
+            metrics.totalIdleSkippedDisabled = 0;
+            metrics.totalIdleSkippedSubagent = 0;
+            metrics.totalMessagesEmpty = 0;
+            metrics.totalLastMsgNotAssistant = 0;
+            metrics.totalAutopilotAttempts = 0;
+            metrics.totalAutopilotFallbacks = 0;
+            metrics.promptContinue = 0;
+            metrics.promptEscalation = 0;
+            metrics.promptLoopBreak = 0;
+            metrics.promptCompletionNudge = 0;
+            metrics.sessionContinuations = {};
+            metrics.sessionErrors = {};
+        },
         getSummary() {
             const avgContinuations = metrics.totalSessions > 0 ? (metrics.totalContinuations / metrics.totalSessions).toFixed(2) : 0;
             const loopRate = metrics.totalContinuations > 0 ? (metrics.totalLoopDetections / metrics.totalContinuations * 100).toFixed(1) : 0;
@@ -96,3 +124,7 @@ function createMetricsTracker() {
 
 export const metrics = createMetricsTracker();
 export { createMetricsTracker };
+
+export function resetMetrics() {
+    metrics.reset();
+}

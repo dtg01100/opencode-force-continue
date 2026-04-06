@@ -23,7 +23,7 @@ import {
 import { createValidateTool } from "./tools/validate.js";
 
 export { sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession } from "./state.js";
-export { createMetricsTracker } from "./metrics.js";
+export { createMetricsTracker, resetMetrics } from "./metrics.js";
 export { resolveConfig, DEFAULT_CONFIG } from "./config.js";
 export { createFileStore, createHybridStore } from "./persistence.js";
 export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState } from "./autopilot.js";

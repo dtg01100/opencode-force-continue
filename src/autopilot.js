@@ -9,7 +9,13 @@ export function readAutopilotState() {
 }
 
 export function writeAutopilotState(state) {
-  autopilotState = state;
+  if (!state || typeof state !== "object") {
+    throw new Error("writeAutopilotState: state must be an object with { enabled: boolean, timestamp: number|null }");
+  }
+  autopilotState = {
+    enabled: Boolean(state.enabled),
+    timestamp: typeof state.timestamp === "number" ? state.timestamp : null,
+  };
 }
 
 export function buildAutopilotPrompt(question, context, options) {
@@ -30,9 +36,11 @@ export function buildAutopilotPrompt(question, context, options) {
 
 export function getAutopilotEnabled(config) {
   const stored = readAutopilotState();
-  return stored.enabled;
+  // Runtime toggle takes precedence over config default
+  if (stored.timestamp !== null) return stored.enabled;
+  return config?.autopilotEnabled ?? false;
 }
 
 export function getAutopilotMaxAttempts(config) {
-  return config.autopilotMaxAttempts;
+  return config?.autopilotMaxAttempts ?? 3;
 }

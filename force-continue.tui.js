@@ -2,9 +2,17 @@ import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
+let disposeCommands = [];
+
 export const tui = async (api, options, meta) => {
+    // Cleanup previous registrations
+    for (const dispose of disposeCommands) {
+        if (typeof dispose === "function") dispose();
+    }
+    disposeCommands = [];
+
     const showToast = (props) => {
-        if (api.ui?.toast) {
+        if (typeof api.ui?.toast === "function") {
             api.ui.toast(props);
         }
     };
@@ -38,13 +46,15 @@ export const tui = async (api, options, meta) => {
         }
 
         try {
-            api.command.register(commandsProvider);
+            const dispose = api.command.register(commandsProvider);
+            if (typeof dispose === "function") disposeCommands.push(dispose);
         } catch (error) {
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
-                api.command.register(commands);
+                const dispose = api.command.register(commands);
+                if (typeof dispose === "function") disposeCommands.push(dispose);
             } else {
-                throw error;
+                throw new Error(`force-continue: command registration failed — callback not supported and provider did not return an array`);
             }
         }
     };

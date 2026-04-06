@@ -206,7 +206,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                     meta.autopilotAttempts = (meta.autopilotAttempts || 0) + 1;
                     const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
 
-                    if (meta.autopilotAttempts > autopilotMaxAttempts) {
+                    if (meta.autopilotAttempts >= autopilotMaxAttempts) {
                         log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
                         metricsTracker.record(sessionID, "autopilot.fallback.question");
                         metricsTracker.record(sessionID, "circuit.breaker.trip");
