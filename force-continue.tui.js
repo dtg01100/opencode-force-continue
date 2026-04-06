@@ -2,14 +2,9 @@ import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
-export const tuiPlugin = async (ctx) => {
-    const api = ctx?.api ?? ctx;
-    if (!api?.command) {
-        return {};
-    }
-
+export const tui = async (api, options, meta) => {
     api.command.register(() => {
-        const state = readAutopilotState();
+        const state = readAutopilotState() ?? { enabled: false, timestamp: null };
         return [
             {
                 title: state.enabled ? "Disable Autopilot" : "Enable Autopilot",
@@ -19,31 +14,20 @@ export const tuiPlugin = async (ctx) => {
                     : "Autopilot is OFF - AI asks for guidance",
                 category: "Force Continue",
                 onSelect: () => {
-                    console.log('[force-continue] Autopilot command selected, current state:', state.enabled);
                     const newEnabled = !state.enabled;
-                    console.log('[force-continue] Toggling to:', newEnabled);
                     if (newEnabled) {
-                        console.log('[force-continue] Showing confirmation dialog');
-                        api.ui.dialog.replace(() => 
-                            api.ui.DialogConfirm({
-                                title: "Enable Autopilot",
-                                message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
-                                onConfirm: () => {
-                                    console.log('[force-continue] Confirmation dialog confirmed');
-                                    writeAutopilotState({ enabled: true, timestamp: Date.now() });
-                                    api.ui.dialog.clear();
-                                    api.ui.toast({
-                                        message: "Autopilot enabled",
-                                        variant: "warning",
-                                    });
-                                },
-                                onCancel: () => {
-                                    api.ui.dialog.clear();
-                                },
-                            }),
-                        );
+                        api.ui.DialogConfirm({
+                            title: "Enable Autopilot",
+                            message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
+                            onConfirm: () => {
+                                writeAutopilotState({ enabled: true, timestamp: Date.now() });
+                                api.ui.toast({
+                                    message: "Autopilot enabled",
+                                    variant: "warning",
+                                });
+                            },
+                        });
                     } else {
-                        console.log('[force-continue] Disabling autopilot');
                         writeAutopilotState({ enabled: false, timestamp: Date.now() });
                         api.ui.toast({
                             message: "Autopilot disabled",
@@ -54,10 +38,6 @@ export const tuiPlugin = async (ctx) => {
             },
         ];
     });
-
-    return {};
 };
 
-export const tui = tuiPlugin;
-
-export default { id, tui: tuiPlugin };
+export default { id, tui };

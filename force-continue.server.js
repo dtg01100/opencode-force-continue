@@ -1,17 +1,10 @@
 export { createContinuePlugin, id, sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession, createMetricsTracker, resolveConfig, DEFAULT_CONFIG, createFileStore, createHybridStore, getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState } from "./src/plugin.js";
 
 import { createContinuePlugin, id } from "./src/plugin.js";
-import { tuiPlugin } from "./force-continue.tui.js";
+import { tui } from "./force-continue.tui.js";
 
-const tuiFactory = (options = {}) => {
-    return async (ctx) => {
-        if (ctx?.api?.command) {
-            await tuiPlugin(ctx);
-        }
-        return createContinuePlugin(options)(ctx);
-    };
-};
+const ContinuePlugin = createContinuePlugin();
 
-export { tuiPlugin as tui };
+export { tui };
 
-export default { id, server: createContinuePlugin, tui: tuiFactory };
+export default { id, server: ContinuePlugin, tui };
