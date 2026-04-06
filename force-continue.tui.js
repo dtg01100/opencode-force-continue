@@ -8,7 +8,7 @@ export const tui = async (api, options, meta) => {
             api.ui.dialog.setSize("medium");
         }
 
-        const renderDialog = () => api.ui.DialogConfirm(props);
+        const renderDialog = () => api.ui?.DialogConfirm ? api.ui.DialogConfirm(props) : null;
         if (api.ui?.dialog?.replace) {
             api.ui.dialog.replace(renderDialog);
             return;
@@ -22,12 +22,19 @@ export const tui = async (api, options, meta) => {
             }
             return;
         }
+        // Fallback: direct render if dialog stack unavailable
         renderDialog();
     };
 
     const clearDialog = () => {
         if (api.ui?.dialog?.clear) {
             api.ui.dialog.clear();
+        }
+    };
+
+    const showToast = (props) => {
+        if (api.ui?.toast) {
+            api.ui.toast(props);
         }
     };
 
@@ -52,7 +59,7 @@ export const tui = async (api, options, meta) => {
                             onConfirm: () => {
                                 writeAutopilotState({ enabled: true, timestamp: Date.now() });
                                 clearDialog();
-                                api.ui.toast({
+                                showToast({
                                     message: "Autopilot enabled",
                                     variant: "warning",
                                 });
@@ -63,7 +70,7 @@ export const tui = async (api, options, meta) => {
                         });
                     } else {
                         writeAutopilotState({ enabled: false, timestamp: Date.now() });
-                        api.ui.toast({
+                        showToast({
                             message: "Autopilot disabled",
                             variant: "info",
                         });
