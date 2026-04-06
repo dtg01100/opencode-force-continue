@@ -326,7 +326,7 @@ describe('ContinuePlugin', () => {
       expect(await getPaused('complete-session')).not.toBeNull();
     });
 
-    it('should NOT abort session when unfinished tasks remain', async () => {
+    it('should prompt to continue when unfinished tasks remain', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin({
@@ -337,8 +337,10 @@ describe('ContinuePlugin', () => {
       const toolDef = plugin.tool.completionSignal;
       const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'task-session' } as any);
 
-      expect(result).toBe('Ready for user.');
-      expect(await getPaused('task-session')).not.toBeNull();
+      expect(result).toContain('unfinished task(s) remain');
+      expect(result).toContain('Do NOT stop');
+      expect(result).toContain('Continue working');
+      expect(await getPaused('task-session')).toBeNull();
     });
 
     it('should NOT abort session when status is blocked', async () => {
@@ -1598,7 +1600,8 @@ describe('ContinuePlugin', () => {
       });
       const toolDef = plugin.tool.completionSignal;
       const result = await toolDef.execute({ status: 'completed' }, { sessionID: 'task-not-done' } as any);
-      expect(result).toBe('Ready for user.');
+      expect(result).toContain('unfinished task(s) remain');
+      expect(result).toContain('Do NOT stop');
     });
   });
 });
