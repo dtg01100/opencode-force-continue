@@ -3,6 +3,25 @@ import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 export const id = "force-continue";
 
 export const tui = async (api, options, meta) => {
+    const showConfirmDialog = (props) => {
+        const renderDialog = () => api.ui.DialogConfirm(props);
+        if (api.ui?.dialog?.replace) {
+            api.ui.dialog.replace(renderDialog);
+            return;
+        }
+        if (api.ui?.dialog?.open) {
+            api.ui.dialog.open(renderDialog);
+            return;
+        }
+        renderDialog();
+    };
+
+    const clearDialog = () => {
+        if (api.ui?.dialog?.clear) {
+            api.ui.dialog.clear();
+        }
+    };
+
     const getCommands = () => {
         const state = readAutopilotState() ?? { enabled: false, timestamp: null };
         return [
@@ -18,24 +37,21 @@ export const tui = async (api, options, meta) => {
                     const current = readAutopilotState() ?? { enabled: false };
                     const newEnabled = !current.enabled;
                     if (newEnabled) {
-                        // DialogConfirm returns a JSX element; must use api.ui.dialog.replace to render it
-                        api.ui.dialog.replace(() =>
-                            api.ui.DialogConfirm({
-                                title: "Enable Autopilot",
-                                message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
-                                onConfirm: () => {
-                                    writeAutopilotState({ enabled: true, timestamp: Date.now() });
-                                    api.ui.dialog.clear();
-                                    api.ui.toast({
-                                        message: "Autopilot enabled",
-                                        variant: "warning",
-                                    });
-                                },
-                                onCancel: () => {
-                                    api.ui.dialog.clear();
-                                },
-                            })
-                        );
+                        showConfirmDialog({
+                            title: "Enable Autopilot",
+                            message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
+                            onConfirm: () => {
+                                writeAutopilotState({ enabled: true, timestamp: Date.now() });
+                                clearDialog();
+                                api.ui.toast({
+                                    message: "Autopilot enabled",
+                                    variant: "warning",
+                                });
+                            },
+                            onCancel: () => {
+                                clearDialog();
+                            },
+                        });
                     } else {
                         writeAutopilotState({ enabled: false, timestamp: Date.now() });
                         api.ui.toast({

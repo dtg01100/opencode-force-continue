@@ -95,4 +95,38 @@ describe('TUI autopilot toggle', () => {
 
     expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
   });
+
+  it('falls back to direct DialogConfirm when dialog.replace is unavailable', async () => {
+    resetAutopilotState();
+    writeAutopilotState({ enabled: false, timestamp: null });
+
+    let dialogOpened = false;
+    let dialogProps: any = null;
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => {
+          mockApi._getCommands = fn;
+          return () => {};
+        },
+      },
+      ui: {
+        DialogConfirm: (props: any) => {
+          dialogOpened = true;
+          dialogProps = props;
+          return null;
+        },
+        toast: (_: any) => {},
+      },
+      _getCommands: () => [],
+    };
+
+    await tui(mockApi);
+
+    const commands = mockApi._getCommands();
+    commands[0].onSelect();
+
+    expect(dialogOpened).toBe(true);
+    expect(dialogProps).toBeTruthy();
+    expect(dialogProps.title).toBe('Enable Autopilot');
+  });
 });
