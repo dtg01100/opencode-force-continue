@@ -129,4 +129,75 @@ describe('TUI autopilot toggle', () => {
     expect(dialogProps).toBeTruthy();
     expect(dialogProps.title).toBe('Enable Autopilot');
   });
+
+  it('falls back to dialog.open with the DialogConfirm component when replace is unavailable', async () => {
+    resetAutopilotState();
+    writeAutopilotState({ enabled: false, timestamp: null });
+
+    let dialogOpened = false;
+    let dialogProps: any = null;
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => {
+          mockApi._getCommands = fn;
+          return () => {};
+        },
+      },
+      ui: {
+        dialog: {
+          open: (component: any) => {
+            dialogOpened = true;
+            return component;
+          },
+          clear: () => {},
+        },
+        DialogConfirm: (props: any) => {
+          dialogProps = props;
+          return { confirmed: true };
+        },
+        toast: (_: any) => {},
+      },
+      _getCommands: () => [],
+    };
+
+    await tui(mockApi);
+
+    const commands = mockApi._getCommands();
+    commands[0].onSelect();
+
+    expect(dialogOpened).toBe(true);
+    expect(dialogProps).toBeTruthy();
+    expect(dialogProps.title).toBe('Enable Autopilot');
+  });
+
+  it('uses array registration when api.command.register rejects callbacks', async () => {
+    resetAutopilotState();
+    writeAutopilotState({ enabled: false, timestamp: null });
+
+    let registeredCommands: any = null;
+    const mockApi: any = {
+      command: {
+        register: (value: any) => {
+          if (typeof value === 'function') {
+            throw new Error('callback not supported');
+          }
+          registeredCommands = value;
+          return () => {};
+        },
+      },
+      ui: {
+        dialog: {
+          replace: (_: any) => {},
+          clear: () => {},
+        },
+        DialogConfirm: (_: any) => null,
+        toast: (_: any) => {},
+      },
+    };
+
+    await tui(mockApi);
+
+    expect(Array.isArray(registeredCommands)).toBe(true);
+    expect(registeredCommands[0].title).toBe('Enable Autopilot');
+  });
 });

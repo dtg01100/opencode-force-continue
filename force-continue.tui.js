@@ -4,13 +4,22 @@ export const id = "force-continue";
 
 export const tui = async (api, options, meta) => {
     const showConfirmDialog = (props) => {
+        if (api.ui?.dialog?.setSize) {
+            api.ui.dialog.setSize("medium");
+        }
+
         const renderDialog = () => api.ui.DialogConfirm(props);
         if (api.ui?.dialog?.replace) {
             api.ui.dialog.replace(renderDialog);
             return;
         }
         if (api.ui?.dialog?.open) {
-            api.ui.dialog.open(renderDialog);
+            const component = renderDialog();
+            if (component !== undefined) {
+                api.ui.dialog.open(component);
+            } else {
+                api.ui.dialog.open(renderDialog);
+            }
             return;
         }
         renderDialog();
@@ -64,7 +73,24 @@ export const tui = async (api, options, meta) => {
         ];
     };
 
-    api.command.register(getCommands);
+    const registerCommands = (commandsProvider) => {
+        if (typeof api.command?.register !== "function") {
+            return;
+        }
+
+        try {
+            api.command.register(commandsProvider);
+        } catch (error) {
+            const commands = commandsProvider();
+            if (Array.isArray(commands)) {
+                api.command.register(commands);
+            } else {
+                throw error;
+            }
+        }
+    };
+
+    registerCommands(getCommands);
 };
 
 export default { id, tui };
