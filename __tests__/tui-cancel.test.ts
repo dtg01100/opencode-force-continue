@@ -1,52 +1,51 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState, writeAutopilotState, readAutopilotState } from '../src/autopilot.js';
 
 describe('TUI cancel behavior', () => {
-  it('cancelling DialogConfirm leaves autopilot disabled and re-register label stays Enable Autopilot', async () => {
-    // Ensure clean state
+  it('cancelling DialogConfirm leaves autopilot disabled', async () => {
     resetAutopilotState();
     writeAutopilotState({ enabled: false, timestamp: null });
 
-    // Capture registered commands across registrations
-    const registeredCommands: any[] = [];
+    let getCommandsFn: (() => any[]) | null = null;
+    let dialogProps: any = null;
 
     const mockApi: any = {
       command: {
         register: (fn: any) => {
-          const cmds = fn();
-          registeredCommands.push(...(Array.isArray(cmds) ? cmds : [cmds]));
-          return cmds;
+          getCommandsFn = fn;
+          return () => {};
         },
       },
       ui: {
-        DialogConfirm: (payload: any) => {
-          // Simulate user cancelling the dialog: do NOT call onConfirm, call onCancel if provided
-          if (payload && typeof payload.onCancel === 'function') {
-            payload.onCancel();
-          }
+        dialog: {
+          replace: (renderFn: () => any) => { renderFn(); },
+          clear: () => {},
+        },
+        DialogConfirm: (props: any) => {
+          dialogProps = props;
+          return null;
         },
         toast: (_: any) => {},
       },
     };
 
-    // First registration should provide 'Enable Autopilot'
-    await tui(mockApi as any);
-    expect(registeredCommands.length).toBeGreaterThan(0);
-    const first = registeredCommands[0];
-    expect(first.title).toBe('Enable Autopilot');
+    await tui(mockApi);
 
-    // Simulate selecting the command
-    await first.onSelect();
+    const commands = getCommandsFn!();
+    expect(commands[0].title).toBe('Enable Autopilot');
 
-    // After cancelling, state should remain disabled
-    const state = readAutopilotState();
-    expect(state.enabled).toBe(false);
+    // Select command — opens dialog
+    commands[0].onSelect();
+    expect(dialogProps).toBeTruthy();
 
-    // Re-register to see label remains 'Enable Autopilot'
-    const before = registeredCommands.length;
-    await tui(mockApi as any);
-    const reReg = registeredCommands.slice(-1)[0];
-    expect(reReg.title).toBe('Enable Autopilot');
+    // Cancel the dialog
+    dialogProps.onCancel?.();
+
+    // State must remain disabled
+    expect(readAutopilotState().enabled).toBe(false);
+
+    // Fresh commands still show "Enable Autopilot"
+    expect(getCommandsFn!()[0].title).toBe('Enable Autopilot');
   });
 });
