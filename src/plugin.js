@@ -26,7 +26,7 @@ export { sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession 
 export { createMetricsTracker } from "./metrics.js";
 export { resolveConfig, DEFAULT_CONFIG } from "./config.js";
 export { createFileStore, createHybridStore } from "./persistence.js";
-export { getAutopilotEnabled, getAutopilotMaxAttempts } from "./autopilot.js";
+export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState } from "./autopilot.js";
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };

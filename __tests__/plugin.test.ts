@@ -1105,27 +1105,27 @@ describe('ContinuePlugin', () => {
     });
   });
 
-  describe('autopilot', () => {
-    beforeEach(() => {
-      vi.resetModules();
-      // Clean up autopilot state file to avoid test interference
-      const autopilotPath = join(process.cwd(), '.opencode', 'force-continue-store', 'autopilot.json');
-      try {
-        if (existsSync(autopilotPath)) {
-          unlinkSync(autopilotPath);
-        }
-      } catch {}
+describe('autopilot', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+  });
+
+  it('should generate autonomous answer when autopilot enabled', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
     });
+    const plugin = await createPlugin(mockCtx);
 
-    it('should generate autonomous answer when autopilot enabled', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 3
-      });
-      const plugin = await createPlugin(mockCtx);
+    // Autopilot is session-scoped, so we need to manually enable it for the test
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
 
-      const toolDef = plugin.tool.requestGuidance;
+    const toolDef = plugin.tool.requestGuidance;
       const result = await toolDef.execute(
         { question: 'Should I use A or B?', context: 'Building a feature', options: 'A or B' },
         { sessionID: 'test-session' } as any
@@ -1138,15 +1138,19 @@ describe('ContinuePlugin', () => {
       expect(result).toBe('Autopilot resolved guidance question.');
     });
 
-    it('should fall back after max autopilot attempts', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 2
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should fall back after max autopilot attempts', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 2
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      const toolDef = plugin.tool.requestGuidance;
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
       const toolCtx = { sessionID: 'test-session' } as any;
 
       await toolDef.execute({ question: 'First question?' }, toolCtx);
@@ -1166,15 +1170,19 @@ describe('ContinuePlugin', () => {
       });
     });
 
-    it('should reset autopilot attempts on user message', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 1
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should reset autopilot attempts on user message', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 1
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      const toolDef = plugin.tool.requestGuidance;
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
       const toolCtx = { sessionID: 'test-session' } as any;
 
       await toolDef.execute({ question: 'Question 1' }, toolCtx);
@@ -1191,16 +1199,20 @@ describe('ContinuePlugin', () => {
       expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(3);
     });
 
-    it('should fall back when promptAsync fails', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      mockClient.session.promptAsync = vi.fn().mockRejectedValue(new Error('Network error'));
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 3
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should fall back when promptAsync fails', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    mockClient.session.promptAsync = vi.fn().mockRejectedValue(new Error('Network error'));
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      const toolDef = plugin.tool.requestGuidance;
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
       const result = await toolDef.execute(
         { question: 'What should I do?' },
         { sessionID: 'test-session' } as any
@@ -1209,15 +1221,19 @@ describe('ContinuePlugin', () => {
       expect(result).toContain('Auto-continue paused until user responds.');
     });
 
-    it('should auto-answer AI questions in text when autopilot enabled', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 3
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should auto-answer AI questions in text when autopilot enabled', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-session' } } } });
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-session' } } } });
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'I should use approach A or B. Which one should I choose?' }] }]
@@ -1235,15 +1251,19 @@ describe('ContinuePlugin', () => {
       });
     });
 
-    it('should fall back to user after max attempts on AI questions', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 2
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should fall back to user after max attempts on AI questions', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 2
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-fallback-session' } } } });
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'question-fallback-session' } } } });
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Should I do X or Y?' }] }]
@@ -1271,15 +1291,19 @@ describe('ContinuePlugin', () => {
       });
     });
 
-    it('should reset autopilot attempts on user message for AI questions', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin({
-        autopilotEnabled: true,
-        autopilotMaxAttempts: 1
-      });
-      const plugin = await createPlugin(mockCtx);
+  it('should reset autopilot attempts on user message for AI questions', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 1
+    });
+    const plugin = await createPlugin(mockCtx);
 
-      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'reset-session' } } } });
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'reset-session' } } } });
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'What should I do next?' }] }]

@@ -1,4 +1,4 @@
-export { createContinuePlugin, id, sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession, createMetricsTracker, resolveConfig, DEFAULT_CONFIG, createFileStore, createHybridStore, getAutopilotEnabled, getAutopilotMaxAttempts } from "./src/plugin.js";
+export { createContinuePlugin, id, sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession, createMetricsTracker, resolveConfig, DEFAULT_CONFIG, createFileStore, createHybridStore, getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState } from "./src/plugin.js";
 
 import { createContinuePlugin, id } from "./src/plugin.js";
 import { tuiPlugin } from "./force-continue.tui.js";
