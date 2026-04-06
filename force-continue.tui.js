@@ -24,22 +24,28 @@ export const tuiPlugin = async (ctx) => {
           console.log('[force-continue] Toggling to:', newEnabled);
           if (newEnabled) {
             console.log('[force-continue] Showing confirmation dialog');
-            api.ui.DialogConfirm({
-                            title: "Enable Autopilot",
-                            message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
-            onConfirm: () => {
-              console.log('[force-continue] Confirmation dialog confirmed');
-              writeAutopilotState({ enabled: true, timestamp: Date.now() });
-                                api.ui.toast({
-                                    message: "Autopilot enabled",
-                                    variant: "warning",
-                                });
-                            },
-                        });
+            api.ui.dialog.replace(() => 
+              api.ui.DialogConfirm({
+                title: "Enable Autopilot",
+                message: "Autopilot allows the AI to make decisions and take actions without asking for confirmation. This may result in unintended changes. Are you sure?",
+                onConfirm: () => {
+                  console.log('[force-continue] Confirmation dialog confirmed');
+                  writeAutopilotState({ enabled: true, timestamp: Date.now() });
+                  api.ui.dialog.clear();
+                  api.ui.toast({
+                    message: "Autopilot enabled",
+                    variant: "warning",
+                  });
+                },
+                onCancel: () => {
+                  api.ui.dialog.clear();
+                },
+              }),
+            );
           } else {
             console.log('[force-continue] Disabling autopilot');
             writeAutopilotState({ enabled: false, timestamp: Date.now() });
-                        api.ui.toast({
+            api.ui.toast({
                             message: "Autopilot disabled",
                             variant: "info",
                         });
