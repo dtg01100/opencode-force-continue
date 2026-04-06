@@ -14,7 +14,9 @@ export const tui = async (api, options, meta) => {
                     : "Autopilot is OFF - AI asks for guidance",
                 category: "Force Continue",
                 onSelect: () => {
-                    const newEnabled = !state.enabled;
+                    // Read fresh state at interaction time to avoid stale closure
+                    const current = readAutopilotState() ?? { enabled: false };
+                    const newEnabled = !current.enabled;
                     if (newEnabled) {
                         api.ui.DialogConfirm({
                             title: "Enable Autopilot",
