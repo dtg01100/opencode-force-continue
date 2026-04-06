@@ -2,13 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState, writeAutopilotState, readAutopilotState } from '../src/autopilot.js';
 
-describe('TUI cancel behavior', () => {
-  it('cancelling DialogConfirm leaves autopilot disabled', async () => {
+describe('TUI disable autopilot', () => {
+  it('selecting Disable Autopilot leaves autopilot disabled', async () => {
     resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
 
     let getCommandsFn: (() => any[]) | null = null;
-    let dialogProps: any = null;
 
     const mockApi: any = {
       command: {
@@ -18,14 +17,6 @@ describe('TUI cancel behavior', () => {
         },
       },
       ui: {
-        dialog: {
-          replace: (renderFn: () => any) => { renderFn(); },
-          clear: () => {},
-        },
-        DialogConfirm: (props: any) => {
-          dialogProps = props;
-          return null;
-        },
         toast: (_: any) => {},
       },
     };
@@ -33,19 +24,15 @@ describe('TUI cancel behavior', () => {
     await tui(mockApi);
 
     const commands = getCommandsFn!();
-    expect(commands[0].title).toBe('Enable Autopilot');
+    expect(commands[0].title).toBe('Disable Autopilot');
 
-    // Select command — opens dialog
+    // Select command — autopilot disables directly
     commands[0].onSelect();
-    expect(dialogProps).toBeTruthy();
 
-    // Cancel the dialog
-    dialogProps.onCancel?.();
-
-    // State must remain disabled
+    // State must be disabled
     expect(readAutopilotState().enabled).toBe(false);
 
-    // Fresh commands still show "Enable Autopilot"
+    // Fresh commands now show "Enable Autopilot"
     expect(getCommandsFn!()[0].title).toBe('Enable Autopilot');
   });
 });

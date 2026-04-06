@@ -8,7 +8,6 @@ describe('TUI refresh on toggle', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
 
     let getCommandsFn: (() => any[]) | null = null;
-    let dialogProps: any = null;
     let registerCalls = 0;
 
     const mockApi: any = {
@@ -20,14 +19,6 @@ describe('TUI refresh on toggle', () => {
         },
       },
       ui: {
-        dialog: {
-          replace: (renderFn: () => any) => { renderFn(); },
-          clear: () => {},
-        },
-        DialogConfirm: (props: any) => {
-          dialogProps = props;
-          return null;
-        },
         toast: (_: any) => {},
       },
     };
@@ -36,9 +27,8 @@ describe('TUI refresh on toggle', () => {
     expect(registerCalls).toBe(1);
     expect(getCommandsFn!()[0].title).toBe('Enable Autopilot');
 
-    // Select command to open dialog, then confirm
+    // Select command — autopilot enables directly
     getCommandsFn!()[0].onSelect();
-    dialogProps.onConfirm();
 
     expect(readAutopilotState().enabled).toBe(true);
 
