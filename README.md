@@ -1,6 +1,8 @@
 # opencode-force-continue
 
-Forces OpenCode AI to continue when the model stops early by detecting unfinished sessions and prompting the model to continue until it explicitly signals completion.
+Forces OpenCode AI (and KiloCode CLI) to continue when the model stops early by detecting unfinished sessions and prompting the model to continue until it explicitly signals completion.
+
+> **Note:** This plugin also works with [KiloCode CLI](https://github.com/kilocode/kilocode), which is built on the OpenCode plugin architecture. Installation and usage are identical.
 
 The AI is expected to call `completionSignal` when it has finished a task; the plugin treats any session without that signal as incomplete and will attempt to auto-continue.
 
