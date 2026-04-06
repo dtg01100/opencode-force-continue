@@ -28,6 +28,12 @@ async function run() {
       },
       DialogConfirm(payload) {
         if (payload.onConfirm) payload.onConfirm();
+      },
+      dialog: {
+        replace(renderFn) {
+          renderFn();
+        },
+        clear() {}
       }
     },
     kv: {
