@@ -74,8 +74,16 @@ export const createContinuePlugin = (options = {}) => {
         const sessionEventsHandler = createSessionEventsHandler(ctx, config, client, metrics, log);
         const originalEventHandler = returnObj.event;
         returnObj.event = async ({ event }) => {
-            await originalEventHandler({ event });
-            await sessionEventsHandler({ event });
+            try {
+                await originalEventHandler({ event });
+            } catch (e) {
+                log("error", "File events handler error", { error: e?.message });
+            }
+            try {
+                await sessionEventsHandler({ event });
+            } catch (e) {
+                log("error", "Session events handler error", { error: e?.message });
+            }
         };
 
         returnObj["experimental.session.compacting"] = createSessionCompactingHandler(config);
@@ -84,12 +92,8 @@ export const createContinuePlugin = (options = {}) => {
     };
 };
 
-import { tui } from "../force-continue.tui.js";
-
-export { tui };
-
 export const id = "force-continue";
 
 export const ContinuePlugin = createContinuePlugin();
 
-export default { id: "force-continue", server: ContinuePlugin, tui };
+export default { id, server: ContinuePlugin };

@@ -22,16 +22,21 @@ export const DEFAULT_CONFIG = {
     skipNudgeInSubagents: true,
 };
 
+function safeParseInt(value, fallback) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 export function resolveConfig() {
     const envConfig = {};
-    if (process.env.FORCE_CONTINUE_MAX_CONTINUATIONS) envConfig.maxContinuations = parseInt(process.env.FORCE_CONTINUE_MAX_CONTINUATIONS, 10);
-    if (process.env.FORCE_CONTINUE_ESCALATION_THRESHOLD) envConfig.escalationThreshold = parseInt(process.env.FORCE_CONTINUE_ESCALATION_THRESHOLD, 10);
+    if (process.env.FORCE_CONTINUE_MAX_CONTINUATIONS) envConfig.maxContinuations = safeParseInt(process.env.FORCE_CONTINUE_MAX_CONTINUATIONS, DEFAULT_CONFIG.maxContinuations);
+    if (process.env.FORCE_CONTINUE_ESCALATION_THRESHOLD) envConfig.escalationThreshold = safeParseInt(process.env.FORCE_CONTINUE_ESCALATION_THRESHOLD, DEFAULT_CONFIG.escalationThreshold);
     if (process.env.FORCE_CONTINUE_ENABLE_LOOP_DETECTION !== undefined) envConfig.enableLoopDetection = process.env.FORCE_CONTINUE_ENABLE_LOOP_DETECTION !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_TOOL_LOOP_DETECTION !== undefined) envConfig.enableToolLoopDetection = process.env.FORCE_CONTINUE_ENABLE_TOOL_LOOP_DETECTION !== "false";
     if (process.env.FORCE_CONTINUE_AUTO_CONTINUE !== undefined) envConfig.autoContinueEnabled = process.env.FORCE_CONTINUE_AUTO_CONTINUE !== "false";
-    if (process.env.FORCE_CONTINUE_COOLDOWN_MS) envConfig.cooldownMs = parseInt(process.env.FORCE_CONTINUE_COOLDOWN_MS, 10);
-    if (process.env.FORCE_CONTINUE_NUDGE_DELAY_MS) envConfig.nudgeDelayMs = parseInt(process.env.FORCE_CONTINUE_NUDGE_DELAY_MS, 10);
-    if (process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD) envConfig.circuitBreakerThreshold = parseInt(process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD, 10);
+    if (process.env.FORCE_CONTINUE_COOLDOWN_MS) envConfig.cooldownMs = safeParseInt(process.env.FORCE_CONTINUE_COOLDOWN_MS, DEFAULT_CONFIG.cooldownMs);
+    if (process.env.FORCE_CONTINUE_NUDGE_DELAY_MS) envConfig.nudgeDelayMs = safeParseInt(process.env.FORCE_CONTINUE_NUDGE_DELAY_MS, DEFAULT_CONFIG.nudgeDelayMs);
+    if (process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD) envConfig.circuitBreakerThreshold = safeParseInt(process.env.FORCE_CONTINUE_CIRCUIT_BREAKER_THRESHOLD, DEFAULT_CONFIG.circuitBreakerThreshold);
     if (process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== undefined) envConfig.enableFileTracking = process.env.FORCE_CONTINUE_ENABLE_FILE_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== undefined) envConfig.enableTaskTracking = process.env.FORCE_CONTINUE_ENABLE_TASK_TRACKING !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== undefined) envConfig.enableCompletionSummary = process.env.FORCE_CONTINUE_ENABLE_COMPLETION_SUMMARY !== "false";
@@ -39,7 +44,7 @@ export function resolveConfig() {
     if (process.env.FORCE_CONTINUE_AUTOPILOT_ENABLED !== undefined)
         envConfig.autopilotEnabled = process.env.FORCE_CONTINUE_AUTOPILOT_ENABLED !== "false";
     if (process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS)
-        envConfig.autopilotMaxAttempts = parseInt(process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS, 10);
+        envConfig.autopilotMaxAttempts = safeParseInt(process.env.FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS, DEFAULT_CONFIG.autopilotMaxAttempts);
     if (process.env.FORCE_CONTINUE_SKIP_NUDGE_IN_SUBAGENTS !== undefined)
         envConfig.skipNudgeInSubagents = process.env.FORCE_CONTINUE_SKIP_NUDGE_IN_SUBAGENTS !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_SYSTEM_PROMPT_INJECTION !== undefined)

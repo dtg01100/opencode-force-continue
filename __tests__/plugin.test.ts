@@ -1463,7 +1463,10 @@ describe('ContinuePlugin', () => {
     it('should trip circuit breaker after threshold errors', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin( { circuitBreakerThreshold: 3 });
-      mockClient.session.messages.mockRejectedValue(new Error('Network error'));
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Working' }] }]
+      });
+      mockClient.session.promptAsync.mockRejectedValue(new Error('Network error'));
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'circuit-session' });

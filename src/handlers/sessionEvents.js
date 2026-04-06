@@ -1,6 +1,14 @@
 import { sessionState, updateLastSeen, isTaskDone, isSubagentSession } from "../state.js";
-import { metrics } from "../metrics.js";
 import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt } from "../autopilot.js";
+
+function resolveSessionID(event) {
+    if (event.type === "session.created") {
+        return event.properties?.info?.id;
+    }
+    return event.properties?.sessionID
+        || event.properties?.part?.sessionID
+        || event.properties?.info?.id;
+}
 
 const COMPLETION_KEYWORDS = /\b(done|finished|complete|all set|that.?s all|all done|wrapping up|concluded)\b/i;
 
@@ -54,7 +62,7 @@ function madeProgress(currentText, previousText) {
 }
 
 function isInLoop(currentText, history) {
-    if (!currentText || history.length < 1) return false;
+    if (!currentText || !history || history.length < 1) return false;
     const currentNorm = currentText.toLowerCase().trim();
     for (let i = 0; i < history.length; i++) {
         const prev = history[i].toLowerCase().trim();
@@ -145,22 +153,15 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             const response = await client.session.messages({ path: { id: sessionID } }).catch(() => null);
             const messages = response?.data;
             if (!messages || messages.length === 0) {
-                metrics.record(sessionID, "messages.empty");
-                meta.errorCount = (meta.errorCount || 0) + 1;
-                sessionState.set(sessionID, meta);
-                if (meta.errorCount >= config.circuitBreakerThreshold) {
-                    metrics.record(sessionID, "circuit.breaker.trip");
-                    meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
-                    sessionState.set(sessionID, meta);
-                    log("warn", "Circuit breaker tripped", { sessionID, errorCount: meta.errorCount });
-                }
+                metricsTracker.record(sessionID, "messages.empty");
+                log("debug", "no messages found", { sessionID });
                 return;
             }
 
             const lastMsg = messages[messages.length - 1];
             const lastMsgRole = lastMsg.role || lastMsg.info?.role;
             if (lastMsgRole !== "assistant") {
-                metrics.record(sessionID, "last.msg.not.assistant");
+                metricsTracker.record(sessionID, "last.msg.not.assistant");
                 log("debug", "last message not from assistant", { sessionID, role: lastMsgRole });
                 return;
             }
@@ -185,10 +186,10 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
 
             sessionState.set(sessionID, meta);
-            metrics.record(sessionID, "continuation");
+            metricsTracker.record(sessionID, "continuation");
 
             if (inLoop) {
-                metrics.record(sessionID, "loop.detected");
+                metricsTracker.record(sessionID, "loop.detected");
             }
 
             const taskSummary = hasTasks ? unfinishedTasks.map(t => `- [${t.status}] ${t.title || t.id}`).join("\n") : null;
@@ -207,8 +208,8 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
                     if (meta.autopilotAttempts > autopilotMaxAttempts) {
                         log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
-                        metrics.record(sessionID, "autopilot.fallback.question");
-                        metrics.record(sessionID, "circuit.breaker.trip");
+                        metricsTracker.record(sessionID, "autopilot.fallback.question");
+                        metricsTracker.record(sessionID, "circuit.breaker.trip");
                         // Trip circuit breaker - stop auto-continuing entirely
                         meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
@@ -220,40 +221,40 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                             `Your last response suggested you were waiting for an answer.`,
                             "Choose a reasonable answer and proceed with your work."
                         );
-                        metrics.record(sessionID, "autopilot.question.attempt");
+                        metricsTracker.record(sessionID, "autopilot.question.attempt");
                         log("info", "Autopilot answering AI question", { sessionID, questions });
                         await sendPrompt(sessionID, prompt);
                     }
                 } else {
                     // Autopilot disabled - AI is genuinely waiting for user input, don't nudge
-                    metrics.record(sessionID, "idle.skipped.awaiting.answer");
+                    metricsTracker.record(sessionID, "idle.skipped.awaiting.answer");
                     log("info", "Idle skipped: AI asked a question and autopilot is disabled", { sessionID });
                 }
                 return;
             }
 
             if (meta.continuationCount >= config.maxContinuations) {
-                metrics.record(sessionID, "escalation");
-                metrics.record(sessionID, "prompt.escalation");
+                metricsTracker.record(sessionID, "escalation");
+                metricsTracker.record(sessionID, "prompt.escalation");
                 const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop, config);
                 log("info", "sent escalation prompt", { sessionID, count: meta.continuationCount });
                 await sendPrompt(sessionID, msg);
             } else if (meta.continuationCount >= config.escalationThreshold) {
-                metrics.record(sessionID, "escalation");
-                metrics.record(sessionID, "prompt.escalation");
+                metricsTracker.record(sessionID, "escalation");
+                metricsTracker.record(sessionID, "prompt.escalation");
                 const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop, config);
                 log("info", "sent escalation prompt", { sessionID, count: meta.continuationCount });
                 await sendPrompt(sessionID, msg);
             } else if (inLoop) {
-                metrics.record(sessionID, "prompt.loop.break");
+                metricsTracker.record(sessionID, "prompt.loop.break");
                 log("info", "sent loop-break prompt", { sessionID });
                 await sendPrompt(sessionID, buildLoopBreakPrompt(contextText));
             } else if (contextText && COMPLETION_KEYWORDS.test(contextText) && meta.continuationCount <= 2) {
-                metrics.record(sessionID, "prompt.completion.nudge");
+                metricsTracker.record(sessionID, "prompt.completion.nudge");
                 log("info", "sent completion nudge", { sessionID });
                 await sendPrompt(sessionID, "Your response suggests you are done, but you did not call 'completionSignal'. If your work is complete, call 'completionSignal' with status='completed'. If there is more to do, continue working. If you are stuck, call 'completionSignal' with status='blocked'.");
             } else {
-                metrics.record(sessionID, "prompt.continue");
+                metricsTracker.record(sessionID, "prompt.continue");
                 const pendingGuidance = meta.awaitingGuidance || null;
                 const msg = buildContinuePrompt(meta.continuationCount, taskSummary, contextText, pendingGuidance);
                 log("info", "sent continue prompt", { sessionID, count: meta.continuationCount });
@@ -263,12 +264,12 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             meta.errorCount = (meta.errorCount || 0) + 1;
             sessionState.set(sessionID, meta);
             if (meta.errorCount >= config.circuitBreakerThreshold) {
-                metrics.record(sessionID, "circuit.breaker.trip");
+                metricsTracker.record(sessionID, "circuit.breaker.trip");
                 meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
                 sessionState.set(sessionID, meta);
                 log("warn", "Circuit breaker tripped after error", { sessionID, errorCount: meta.errorCount });
             }
-            metrics.record(sessionID, "error");
+            metricsTracker.record(sessionID, "error");
             log("error", "Plugin error during idle handling", { error: e?.stack ?? e });
         }
     };
@@ -289,15 +290,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
     };
 
     return async ({ event }) => {
-        let sessionID = event.properties?.sessionID;
-        if (event.type === "session.created") {
-            sessionID = event.properties?.info?.id;
-        }
-        const part = event.properties?.part;
-        if (!sessionID && part?.sessionID) {
-            sessionID = part.sessionID;
-        }
+        const sessionID = resolveSessionID(event);
         if (!sessionID) return;
+        const part = event.properties?.part;
 
         if (event.type === "session.created") {
             try {
@@ -307,9 +302,12 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 meta.toolCallHistory = [];
                 meta.errorCount = 0;
                 meta.autoContinuePaused = null;
+                meta.sessionStartedAt = Date.now();
                 sessionState.set(sessionID, meta);
-            } catch (e) {}
-            metrics.record(sessionID, "session.created");
+            } catch (e) {
+                log("debug", "session.created handler error", { sessionID, error: e?.message });
+            }
+            metricsTracker.record(sessionID, "session.created");
             return;
         }
 
@@ -327,7 +325,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                             filesModified: meta.filesModified ? [...meta.filesModified] : [],
                             toolCalls: meta.toolCallHistory?.length || 0,
                             loopsDetected: meta.toolLoopDetected || false,
-                            duration: meta.lastSeen ? Date.now() - meta.lastSeen : 0,
+                            duration: meta.sessionStartedAt ? Date.now() - meta.sessionStartedAt : 0,
                         };
                         log("info", "Session completion summary", { sessionID, summary });
                     }
@@ -344,19 +342,19 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
         }
 
         if (event.type === "session.idle") {
-            metrics.record(sessionID, "idle.event");
+            metricsTracker.record(sessionID, "idle.event");
             log("debug", "session.idle received", { sessionID });
 
             const meta = sessionState.get(sessionID) || { continuationCount: 0 };
 
             if (!config.autoContinueEnabled) {
-                metrics.record(sessionID, "idle.skipped.disabled");
+                metricsTracker.record(sessionID, "idle.skipped.disabled");
                 log("debug", "idle skipped: auto-continue disabled", { sessionID });
                 return;
             }
 
             if (meta.autoContinuePaused) {
-                metrics.record(sessionID, "idle.skipped.paused");
+                metricsTracker.record(sessionID, "idle.skipped.paused");
                 log("debug", "idle skipped: auto-continue paused", { sessionID });
                 return;
             }
@@ -367,7 +365,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             // The nudge will include the pending guidance question if applicable.
 
             if (config.skipNudgeInSubagents && isSubagentSession(sessionID)) {
-                metrics.record(sessionID, "idle.skipped.subagent");
+                metricsTracker.record(sessionID, "idle.skipped.subagent");
                 log("debug", "idle skipped: subagent session", { sessionID });
                 return;
             }
@@ -378,7 +376,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 } catch (e) {
                     log("error", "Babysitter hook error", { error: e?.stack ?? e });
                 }
-                metrics.record(sessionID, "idle.skipped.babysitter");
+                metricsTracker.record(sessionID, "idle.skipped.babysitter");
                 log("debug", "idle skipped: deferred to task babysitter", { sessionID });
                 return;
             }
@@ -429,10 +427,6 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
         }
 
         if (event.type === "session.deleted") {
-            if (!sessionID) {
-                sessionID = event.properties?.info?.id;
-            }
-            if (!sessionID) return;
             sessionState.delete(sessionID);
         }
     };

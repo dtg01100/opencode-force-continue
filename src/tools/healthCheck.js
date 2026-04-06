@@ -1,6 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { sessionState } from "../state.js";
-import { metrics } from "../metrics.js";
+import { readState } from "../state.js";
 
 export function createHealthCheckTool(config, metricsTracker) {
     return tool({
@@ -21,16 +20,4 @@ export function createHealthCheckTool(config, metricsTracker) {
             return JSON.stringify({ metrics: summary, config: { maxContinuations: config.maxContinuations, escalationThreshold: config.escalationThreshold, autoContinueEnabled: config.autoContinueEnabled }, sessions: readState().sessions }, null, 2);
         },
     });
-}
-
-function readState() {
-    const sessions = {};
-    for (const [sessionID, meta] of sessionState.entries()) {
-        const copy = Object.assign({}, meta);
-        if (copy.filesModified instanceof Set) {
-            copy.filesModified = Array.from(copy.filesModified);
-        }
-        sessions[sessionID] = copy;
-    }
-    return { sessions };
 }

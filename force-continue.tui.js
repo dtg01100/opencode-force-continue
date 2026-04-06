@@ -1,36 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-
-function getAutopilotStorePath() {
-    return join(process.cwd(), ".opencode", "force-continue-store", "autopilot.json");
-}
-
-function readAutopilotState() {
-    const p = getAutopilotStorePath();
-    if (!existsSync(p)) return { enabled: false, timestamp: null };
-    try {
-        return JSON.parse(readFileSync(p, "utf-8"));
-    } catch {
-        return { enabled: false, timestamp: null };
-    }
-}
-
-function writeAutopilotState(state) {
-    const p = getAutopilotStorePath();
-    const dir = join(process.cwd(), ".opencode", "force-continue-store");
-    try {
-        existsSync(dir) || mkdirSync(dir, { recursive: true });
-        writeFileSync(p, JSON.stringify(state));
-    } catch (e) {
-        console.warn(`force-continue: Failed to write autopilot state: ${e?.message ?? e}`);
-    }
-}
+import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
 export const tui = async (api, options, meta) => {
     api.command.register(() => {
-        const state = readAutopilotState();
+        const state = readAutopilotState() ?? { enabled: false, timestamp: null };
         return [
             {
                 title: state.enabled ? "Disable Autopilot" : "Enable Autopilot",
