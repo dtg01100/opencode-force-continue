@@ -25,6 +25,9 @@ async function run() {
     ui: {
       toast(payload) {
         toasts.push(payload);
+      },
+      DialogConfirm(payload) {
+        if (payload.onConfirm) payload.onConfirm();
       }
     },
     kv: {

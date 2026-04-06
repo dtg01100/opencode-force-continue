@@ -3,15 +3,40 @@ import { join } from 'path';
 import { existsSync, unlinkSync } from 'fs';
 
 vi.mock('@opencode-ai/plugin', () => {
-  const chainable = () => ({ optional: () => ({ describe: () => ({}) }), describe: () => ({}) });
+  const schemaMethods = (defaultFn) => ({
+    optional: () => schemaMethods(defaultFn),
+    nullable: () => schemaMethods(defaultFn),
+    describe: (desc) => schemaMethods({ ...defaultFn, description: desc }),
+  });
+
+  const stringSchema = () => schemaMethods({ type: 'string', _zodType: 'string' });
+  const numberSchema = () => schemaMethods({ type: 'number', _zodType: 'number' });
+  const booleanSchema = () => schemaMethods({ type: 'boolean', _zodType: 'boolean' });
+  const enumSchema = (values) => schemaMethods({ type: 'enum', values, _zodType: 'enum' });
+  const objectSchema = (shape) => schemaMethods({ type: 'object', shape, _zodType: 'object' });
+  const arraySchema = (schema) => schemaMethods({ type: 'array', schema, _zodType: 'array' });
+  const unionSchema = (schemas) => schemaMethods({ type: 'union', schemas, _zodType: 'union' });
+  const literalSchema = (val) => schemaMethods({ type: 'literal', value: val, _zodType: 'literal' });
+  const optionalSchema = (schema) => schemaMethods({ type: 'optional', schema, _zodType: 'optional' });
+
+  const zodMock = Object.assign(() => {}, {
+    string: stringSchema,
+    number: numberSchema,
+    boolean: booleanSchema,
+    enum: enumSchema,
+    object: objectSchema,
+    array: arraySchema,
+    union: unionSchema,
+    literal: literalSchema,
+    optional: optionalSchema,
+    _isZod: true,
+  });
+
   return {
-    tool: Object.assign(vi.fn((def) => ({ type: 'tool', ...def })), {
-      schema: {
-        string: chainable,
-        number: chainable,
-        boolean: chainable,
-      },
-    }),
+    tool: Object.assign(
+      (def) => def,
+      { schema: zodMock }
+    ),
   };
 });
 

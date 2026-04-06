@@ -2,7 +2,12 @@ import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
-export const tui = async (api, options, meta) => {
+export const tuiPlugin = async (ctx) => {
+    const api = ctx?.api ?? ctx;
+    if (!api?.command) {
+        return {};
+    }
+
     api.command.register(() => {
         const state = readAutopilotState() ?? { enabled: false, timestamp: null };
         return [
@@ -38,6 +43,10 @@ export const tui = async (api, options, meta) => {
             },
         ];
     });
+
+    return {};
 };
 
-export default { id, tui };
+export const tui = tuiPlugin;
+
+export default { id, tui: tuiPlugin };
