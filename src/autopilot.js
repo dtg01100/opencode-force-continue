@@ -1,10 +1,35 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { join } from "path";
+
 let autopilotState = { enabled: false, timestamp: null };
+
+function autopilotFilePath() {
+  return join(process.cwd(), ".opencode", "force-continue", "autopilot.json");
+}
 
 export function resetAutopilotState() {
   autopilotState = { enabled: false, timestamp: null };
+  try {
+    const p = autopilotFilePath();
+    if (existsSync(p)) unlinkSync(p);
+  } catch {}
 }
 
 export function readAutopilotState() {
+  // Prefer in-memory state when this process has explicitly set it (timestamp is non-null).
+  // This avoids cross-process file races in concurrent environments.
+  if (autopilotState.timestamp !== null) {
+    return autopilotState;
+  }
+  try {
+    const p = autopilotFilePath();
+    if (existsSync(p)) {
+      const parsed = JSON.parse(readFileSync(p, "utf-8"));
+      if (parsed && typeof parsed.timestamp === "number" && parsed.timestamp !== null) {
+        return parsed;
+      }
+    }
+  } catch {}
   return autopilotState;
 }
 
@@ -16,6 +41,11 @@ export function writeAutopilotState(state) {
     enabled: Boolean(state.enabled),
     timestamp: typeof state.timestamp === "number" ? state.timestamp : null,
   };
+  try {
+    const p = autopilotFilePath();
+    mkdirSync(join(process.cwd(), ".opencode", "force-continue"), { recursive: true });
+    writeFileSync(p, JSON.stringify(autopilotState));
+  } catch {}
 }
 
 export function buildAutopilotPrompt(question, context, options) {

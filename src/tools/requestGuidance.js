@@ -44,6 +44,8 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                             body: { parts: [{ type: "text", text: prompt }] }
                         });
 
+                        meta.awaitingGuidance = null;
+                        sessionState.set(sessionID, meta);
                         log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
                         metrics.record(sessionID, "autopilot.attempt");
                         return "Autopilot resolved guidance question.";

@@ -203,17 +203,18 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                     // Autopilot: AI asked a question, auto-answer it
                     const questions = extractQuestions(contextText);
                     const questionText = questions.length > 0 ? questions.join(' ') : contextText;
-                    meta.autopilotAttempts = (meta.autopilotAttempts || 0) + 1;
+                    const currentAttempts = (meta.autopilotAttempts || 0) + 1;
+                    meta.autopilotAttempts = currentAttempts;
                     const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
 
-                    if (meta.autopilotAttempts >= autopilotMaxAttempts) {
+                    if (currentAttempts >= autopilotMaxAttempts) {
                         log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
                         metricsTracker.record(sessionID, "autopilot.fallback.question");
                         metricsTracker.record(sessionID, "circuit.breaker.trip");
                         // Trip circuit breaker - stop auto-continuing entirely
                         meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
-                        log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: meta.autopilotAttempts });
+                        log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: currentAttempts });
                     } else {
                         sessionState.set(sessionID, meta);
                         const prompt = buildAutopilotPrompt(

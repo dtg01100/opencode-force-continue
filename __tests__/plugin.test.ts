@@ -1110,6 +1110,11 @@ describe('autopilot', () => {
     resetAutopilotState();
   });
 
+  afterEach(async () => {
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+  });
+
   it('should generate autonomous answer when autopilot enabled', async () => {
     const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
     resetAutopilotState();

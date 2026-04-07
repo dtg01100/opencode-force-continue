@@ -219,6 +219,11 @@ describe('autopilot circuit breaker on AI questions during idle', () => {
     };
   });
 
+  afterEach(async () => {
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+  });
+
   it('should trip circuit breaker after max autopilot attempts on AI questions during idle', async () => {
     const { createContinuePlugin, resetAutopilotState, readState } = await import('../force-continue.server.js');
     resetAutopilotState();

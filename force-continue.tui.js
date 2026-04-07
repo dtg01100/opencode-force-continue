@@ -11,6 +11,7 @@ export const tui = async (api, options, meta) => {
         if (typeof dispose === "function") dispose();
     }
     disposeCommands = [];
+    providerRegistered = false;
 
     const showToast = (props) => {
         if (typeof api.ui?.toast === "function") {
