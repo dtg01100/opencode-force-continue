@@ -4,7 +4,12 @@ import { join } from "path";
 let autopilotState = { enabled: false, timestamp: null };
 
 function autopilotFilePath() {
-  return join(process.cwd(), ".opencode", "force-continue", "autopilot.json");
+  // In test mode each worker gets its own file to prevent cross-worker contamination.
+  // In production all processes share autopilot.json so TUI ↔ server state is visible.
+  const filename = process.env.VITEST
+    ? `autopilot.${process.pid}.json`
+    : "autopilot.json";
+  return join(process.cwd(), ".opencode", "force-continue", filename);
 }
 
 export function resetAutopilotState() {
@@ -16,11 +21,6 @@ export function resetAutopilotState() {
 }
 
 export function readAutopilotState() {
-  // Prefer in-memory state when this process has explicitly set it (timestamp is non-null).
-  // This avoids cross-process file races in concurrent environments.
-  if (autopilotState.timestamp !== null) {
-    return autopilotState;
-  }
   try {
     const p = autopilotFilePath();
     if (existsSync(p)) {
