@@ -88,7 +88,18 @@ export function stopPeriodicCleanup() {
  */
 export function getActiveSessionCount() {
     cleanupExpiredSessions();
-    return sessionState.size;
+    let activeCount = 0;
+    const now = Date.now();
+    for (const [, meta] of sessionState.entries()) {
+        if (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed') {
+            continue;
+        }
+        const lastSeen = meta.lastSeen || meta.sessionStartedAt || 0;
+        if (now - lastSeen <= sessionTtlMs) {
+            activeCount++;
+        }
+    }
+    return activeCount;
 }
 
 export function getAutopilotEnabled(sessionID) {

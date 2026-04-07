@@ -18,7 +18,9 @@ export function resetAutopilotState() {
   try {
     const p = autopilotFilePath();
     if (existsSync(p)) unlinkSync(p);
-  } catch {}
+  } catch (e) {
+    console.debug(`[force-continue] resetAutopilotState: ${e?.message}`);
+  }
 }
 
 export function readAutopilotState() {
@@ -30,7 +32,9 @@ export function readAutopilotState() {
         return parsed;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn(`[force-continue] readAutopilotState: failed to read autopilot state — ${e?.message}`);
+  }
   return autopilotState;
 }
 
@@ -46,12 +50,20 @@ export function writeAutopilotState(state) {
     const p = autopilotFilePath();
     mkdirSync(join(process.cwd(), ".opencode", "force-continue"), { recursive: true });
     writeFileSync(p, JSON.stringify(autopilotState));
-  } catch {}
+  } catch (e) {
+    console.error(`[force-continue] writeAutopilotState: failed to persist autopilot state to disk — ${e?.message}. In-memory state updated but other processes may not see this value.`);
+  }
 }
 
 export function buildAutopilotPrompt(question, context, options) {
   if (!question || typeof question !== "string") {
     throw new Error("buildAutopilotPrompt: question is required and must be a string");
+  }
+  if (context !== undefined && context !== null && typeof context !== "string") {
+    context = String(context);
+  }
+  if (options !== undefined && options !== null && typeof options !== "string") {
+    options = String(options);
   }
   let prompt = `AUTONOMOUS DECISION REQUIRED\n\n`;
   prompt += `Question: ${question}\n\n`;

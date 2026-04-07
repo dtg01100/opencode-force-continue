@@ -7,4 +7,4 @@ const ContinuePlugin = createContinuePlugin();
 
 export { tui };
 
-export default { id, server: ContinuePlugin, tui };
+export default { id, server: ContinuePlugin };

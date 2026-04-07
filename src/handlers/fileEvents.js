@@ -7,8 +7,14 @@ export function createFileEventsHandler(config) {
             if (!sessionID) return;
             const meta = sessionState.get(sessionID) || {};
             meta.filesModified = meta.filesModified || new Set();
-            const filePath = event.properties?.filePath || event.properties?.path;
-            if (filePath) meta.filesModified.add(filePath);
+            let filePath = event.properties?.filePath || event.properties?.path;
+            if (filePath) {
+                filePath = filePath.replace(/\\/g, '/');
+                if (filePath.startsWith('./')) {
+                    filePath = filePath.slice(2);
+                }
+                meta.filesModified.add(filePath);
+            }
             sessionState.set(sessionID, meta);
         }
     };

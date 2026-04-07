@@ -59,18 +59,13 @@ export const tui = async (api, options, meta) => {
                         variant: newEnabled ? "warning" : "info",
                     });
 
-                    // If the API supports a commands provider callback, it will read
-                    // fresh state each time. Only re-register commands when provider
-                    // support is NOT available (older UIs may only accept a static array).
-                    if (!providerRegistered) {
-                        try {
-                            for (const dispose of disposeCommands) {
-                                if (typeof dispose === "function") dispose();
-                            }
-                        } finally {
-                            disposeCommands = [];
-                            registerCommands(getCommands);
+                    try {
+                        for (const dispose of disposeCommands) {
+                            if (typeof dispose === "function") dispose();
                         }
+                    } finally {
+                        disposeCommands = [];
+                        registerCommands(getCommands);
                     }
                 },
 

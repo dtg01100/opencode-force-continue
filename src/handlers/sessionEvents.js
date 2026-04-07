@@ -151,8 +151,21 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
         if (!config.autoContinueEnabled) return;
 
         try {
-            const response = await client.session.messages({ path: { id: sessionID } }).catch(() => null);
-            const messages = response?.data;
+            let messages = null;
+            let messagesError = null;
+            try {
+                const response = await client.session.messages({ path: { id: sessionID } });
+                messages = response?.data;
+            } catch (e) {
+                messagesError = e;
+            }
+            
+            if (messagesError) {
+                metricsTracker.record(sessionID, "messages.error");
+                log("debug", "failed to fetch messages", { sessionID, error: messagesError?.message });
+                return;
+            }
+            
             if (!messages || messages.length === 0) {
                 metricsTracker.record(sessionID, "messages.empty");
                 log("debug", "no messages found", { sessionID });
@@ -175,7 +188,8 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             if (progress && meta.continuationCount > 0) {
                 meta.continuationCount = 0;
-                log("info", "Progress detected, resetting continuation count", { sessionID });
+                meta.autopilotAttempts = 0;
+                log("info", "Progress detected, resetting continuation and autopilot attempt counts", { sessionID });
             }
 
             meta.continuationCount = (meta.continuationCount || 0) + 1;
@@ -279,6 +293,10 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
     const sendPrompt = async (sessionID, text) => {
         if (config.nudgeDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, config.nudgeDelayMs));
+            if (!sessionState.has(sessionID)) {
+                log("debug", "nudge suppressed after delay: session deleted", { sessionID });
+                return;
+            }
             const meta = sessionState.get(sessionID);
             if (meta?.autoContinuePaused) {
                 log("debug", "nudge suppressed after delay", { sessionID, reason: meta.autoContinuePaused.reason });

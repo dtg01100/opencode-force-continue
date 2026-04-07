@@ -35,7 +35,7 @@ export function createToolExecuteBeforeHandler(config, log) {
                     const meta = sessionState.get(sessionID) || {};
                     meta.errorCount = (meta.errorCount || 0) + 1;
                     sessionState.set(sessionID, meta);
-                    log("warn", "Dangerous command blocked", { sessionID, command: cmd, pattern: pattern.toString() });
+                    log("warn", "Dangerous command blocked", { sessionID, command: cmd.replace(/\n/g, "\\n"), pattern: pattern.toString() });
                     throw new Error(`Dangerous command blocked by force-continue plugin: ${cmd.substring(0, 100)}`);
                 }
             }
@@ -46,7 +46,7 @@ export function createToolExecuteBeforeHandler(config, log) {
                     const meta = sessionState.get(sessionID) || {};
                     meta.errorCount = (meta.errorCount || 0) + 1;
                     sessionState.set(sessionID, meta);
-                    log("warn", "Dangerous command blocked (legacy)", { sessionID, command: cmd });
+                    log("warn", "Dangerous command blocked (legacy)", { sessionID, command: cmd.replace(/\n/g, "\\n") });
                     throw new Error(`Dangerous command blocked by force-continue plugin: ${cmd.substring(0, 100)}`);
                 }
             }

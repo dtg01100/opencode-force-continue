@@ -16,6 +16,8 @@ export function createChatMessageHandler() {
             meta.toolLoopDetected = false;
             meta.autopilotAttempts = 0;
             sessionState.set(sessionID, meta);
-        } catch (e) { /* best-effort */ }
+        } catch (e) {
+            console.warn(`[force-continue] chatMessage handler: failed to update session state — ${e?.message}`);
+        }
     };
 }

@@ -32,8 +32,8 @@ describe('TUI refresh on toggle', () => {
 
     expect(readAutopilotState().enabled).toBe(true);
 
-    // No re-registration is needed — the registered callback reads fresh state each time
-    expect(registerCalls).toBe(1);
+    // Re-registration is needed because the API may not re-call the provider callback
+    expect(registerCalls).toBe(2);
     expect(getCommandsFn!()[0].title).toBe('Disable Autopilot');
   });
 });

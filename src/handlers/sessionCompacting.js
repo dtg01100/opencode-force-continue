@@ -14,7 +14,7 @@ export function createSessionCompactingHandler(config) {
                 `<force-continue-state>\n` +
                 `Continuation count: ${continuationState}\n` +
                 `Files modified: ${filesModified.join(", ") || "none"}\n` +
-                `Last progress: ${progressReport ? progressReport.progress : "none"}\n` +
+                `Last progress: ${progressReport?.progress ?? "none"}\n` +
                 `If continuation count >= ${config.escalationThreshold}, try a different approach.\n` +
                 `If continuation count >= ${config.maxContinuations}, call completionSignal(status='blocked').\n` +
                 `</force-continue-state>`
