@@ -2,6 +2,17 @@ import { metrics } from "./metrics.js";
 
 export const sessionState = new Map();
 
+export function getAutopilotEnabled(sessionID) {
+    const meta = sessionState.get(sessionID) || {};
+    return meta.autopilotEnabled ?? false;
+}
+
+export function setAutopilotEnabled(sessionID, enabled) {
+    const meta = sessionState.get(sessionID) || {};
+    meta.autopilotEnabled = enabled;
+    sessionState.set(sessionID, meta);
+}
+
 export function updateLastSeen(sessionID) {
     if (!sessionID || typeof sessionID !== "string") return;
     const meta = sessionState.get(sessionID) || {};

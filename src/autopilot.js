@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
+import { getAutopilotEnabled as getAutopilotEnabledFromState, setAutopilotEnabled as setAutopilotEnabledInState } from "./state.js";
 
 let autopilotState = { enabled: false, timestamp: null };
 
@@ -64,13 +65,15 @@ export function buildAutopilotPrompt(question, context, options) {
   return prompt;
 }
 
-export function getAutopilotEnabled(config) {
-  const stored = readAutopilotState();
-  // Runtime toggle takes precedence over config default
-  if (stored.timestamp !== null) return stored.enabled;
-  return config?.autopilotEnabled ?? false;
+export function getAutopilotEnabled(config, sessionID) {
+    if (sessionID) {
+        return getAutopilotEnabledFromState(sessionID);
+    }
+    const stored = readAutopilotState();
+    if (stored.timestamp !== null) return stored.enabled;
+    return config?.autopilotEnabled ?? false;
 }
 
-export function getAutopilotMaxAttempts(config) {
-  return config?.autopilotMaxAttempts ?? 3;
+export function setAutopilotEnabled(sessionID, enabled) {
+    setAutopilotEnabledInState(sessionID, enabled);
 }

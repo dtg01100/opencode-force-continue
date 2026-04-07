@@ -1,4 +1,4 @@
-import { readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
+import { getAutopilotEnabled, setAutopilotEnabled } from "./src/state.js";
 
 export const id = "force-continue";
 
@@ -19,8 +19,18 @@ export const tui = async (api, options, meta) => {
         }
     };
 
+    const getCurrentSessionID = () => {
+        const route = api?.route?.current;
+        if (route?.name === "session" && route?.params?.sessionID) {
+            return route.params.sessionID;
+        }
+        return null;
+    };
+
     const getCommands = () => {
-        const state = readAutopilotState() ?? { enabled: false, timestamp: null };
+        const sessionID = getCurrentSessionID();
+        const enabled = sessionID ? getAutopilotEnabled(sessionID) : false;
+        const state = { enabled };
         return [
             {
                 title: state.enabled ? "Disable Autopilot" : "Enable Autopilot",
@@ -30,9 +40,17 @@ export const tui = async (api, options, meta) => {
                     : "Autopilot is OFF - AI asks for guidance",
                 category: "Force Continue",
                 onSelect: () => {
-                    const current = readAutopilotState() ?? { enabled: false };
-                    const newEnabled = !current.enabled;
-                    writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
+                    const sessionID = getCurrentSessionID();
+                    if (!sessionID) {
+                        showToast({
+                            message: "No active session - cannot toggle autopilot",
+                            variant: "error",
+                        });
+                        return;
+                    }
+                    const current = getAutopilotEnabled(sessionID);
+                    const newEnabled = !current;
+                    setAutopilotEnabled(sessionID, newEnabled);
                     showToast({
                         message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
                         variant: newEnabled ? "warning" : "info",

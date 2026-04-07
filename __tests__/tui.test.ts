@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { tui } from '../force-continue.tui.js';
-import { readAutopilotState, writeAutopilotState, resetAutopilotState } from '../src/autopilot.js';
+import { getAutopilotEnabled, setAutopilotEnabled } from '../src/state.js';
 
-function makeMockApi() {
+function makeMockApi(sessionID = 'test-session-123') {
   let getCommandsFn: (() => any[]) | null = null;
 
   const mockApi: any = {
@@ -10,6 +10,12 @@ function makeMockApi() {
       register: (fn: any) => {
         getCommandsFn = fn;
         return () => {};
+      },
+    },
+    route: {
+      current: {
+        name: 'session',
+        params: { sessionID },
       },
     },
     ui: {
@@ -22,11 +28,12 @@ function makeMockApi() {
 }
 
 describe('TUI autopilot toggle', () => {
-  it('registers a command with title "Enable Autopilot" when disabled', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+  const sessionID = 'test-session-123';
 
-    const mockApi = makeMockApi();
+  it('registers a command with title "Enable Autopilot" when disabled', async () => {
+    setAutopilotEnabled(sessionID, false);
+
+    const mockApi = makeMockApi(sessionID);
     await tui(mockApi);
 
     const commands = mockApi._getCommands();
@@ -35,34 +42,32 @@ describe('TUI autopilot toggle', () => {
   });
 
   it('enables autopilot directly on select without confirmation dialog', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+    setAutopilotEnabled(sessionID, false);
 
-    const mockApi = makeMockApi();
+    const mockApi = makeMockApi(sessionID);
     await tui(mockApi);
 
     const commands = mockApi._getCommands();
     commands[0].onSelect();
 
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(getAutopilotEnabled(sessionID)).toBe(true);
 
     // getCommands callback always reads fresh state — label should now be "Disable Autopilot"
     expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
   });
 
   it('registers command with title "Disable Autopilot" when already enabled', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+    setAutopilotEnabled(sessionID, true);
 
-    const mockApi = makeMockApi();
+    const mockApi = makeMockApi(sessionID);
+
     await tui(mockApi);
 
     expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
   });
 
   it('uses array registration when api.command.register rejects callbacks', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+    setAutopilotEnabled(sessionID, false);
 
     let registeredCommands: any = null;
     const mockApi: any = {
@@ -73,6 +78,12 @@ describe('TUI autopilot toggle', () => {
           }
           registeredCommands = value;
           return () => {};
+        },
+      },
+      route: {
+        current: {
+          name: 'session',
+          params: { sessionID },
         },
       },
       ui: {
@@ -87,8 +98,7 @@ describe('TUI autopilot toggle', () => {
   });
 
   it('shows toast notification when enabling autopilot', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+    setAutopilotEnabled(sessionID, false);
 
     let toastMessage = '';
     let toastVariant = '';
@@ -97,6 +107,12 @@ describe('TUI autopilot toggle', () => {
         register: (fn: any) => {
           mockApi._getCommands = fn;
           return () => {};
+        },
+      },
+      route: {
+        current: {
+          name: 'session',
+          params: { sessionID },
         },
       },
       ui: {
@@ -115,8 +131,7 @@ describe('TUI autopilot toggle', () => {
   });
 
   it('shows toast notification when disabling autopilot', async () => {
-    resetAutopilotState();
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+    setAutopilotEnabled(sessionID, true);
 
     let toastMessage = '';
     let toastVariant = '';
@@ -125,6 +140,12 @@ describe('TUI autopilot toggle', () => {
         register: (fn: any) => {
           mockApi._getCommands = fn;
           return () => {};
+        },
+      },
+      route: {
+        current: {
+          name: 'session',
+          params: { sessionID },
         },
       },
       ui: {

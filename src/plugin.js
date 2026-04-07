@@ -22,11 +22,11 @@ import {
 } from "./handlers/index.js";
 import { createValidateTool } from "./tools/validate.js";
 
-export { sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession } from "./state.js";
+export { sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession, getAutopilotEnabled, setAutopilotEnabled } from "./state.js";
 export { createMetricsTracker, resetMetrics } from "./metrics.js";
 export { resolveConfig, DEFAULT_CONFIG } from "./config.js";
 export { createFileStore, createHybridStore } from "./persistence.js";
-export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState } from "./autopilot.js";
+export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState, setAutopilotEnabled } from "./autopilot.js";
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };

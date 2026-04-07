@@ -20,7 +20,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                 sessionState.set(sessionID, meta);
                 log("info", "Guidance requested", { sessionID, question });
 
-                const autopilotEnabled = getAutopilotEnabled(config);
+                const autopilotEnabled = getAutopilotEnabled(config, sessionID);
                 if (autopilotEnabled) {
                     const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
                     if (meta.autopilotAttempts >= autopilotMaxAttempts) {
