@@ -1,5 +1,5 @@
 import { sessionState } from "./src/state.js";
-import { setAutopilotEnabled } from "./src/autopilot.js";
+import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
@@ -32,7 +32,9 @@ export const tui = async (api, options, meta) => {
         const sessionID = getCurrentSessionID();
         const sessionMeta = sessionID ? sessionState.get(sessionID) : null;
         const hasSessionOverride = sessionMeta && Object.prototype.hasOwnProperty.call(sessionMeta, "autopilotEnabled");
-        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : false;
+        const globalState = readAutopilotState();
+        const globalEnabled = globalState.timestamp !== null ? globalState.enabled : false;
+        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : globalEnabled;
         const state = { enabled };
         return [
             {

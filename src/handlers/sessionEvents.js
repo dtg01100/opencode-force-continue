@@ -21,13 +21,13 @@ function containsQuestion(text) {
     if (!text) return false;
     const questionMarks = (text.match(QUESTION_PATTERN) || []).length;
     const waitingWords = WAITING_INDICATORS.test(text);
-    return questionMarks > 0 || waitingWords;
+    return questionMarks > 0 && waitingWords;
 }
 
 function extractQuestions(text) {
     if (!text) return [];
     const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    return sentences.filter(s => s.includes('?') || WAITING_INDICATORS.test(s)).map(s => s.trim());
+    return sentences.filter(s => s.includes('?') && WAITING_INDICATORS.test(s)).map(s => s.trim());
 }
 
 function getLastAssistantText(messages) {

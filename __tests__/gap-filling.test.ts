@@ -259,31 +259,6 @@ describe('autopilot circuit breaker on AI questions during idle', () => {
     });
   });
 
-  it('should use contextText as question text when no question marks detected but waiting indicators match', async () => {
-    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
-    resetAutopilotState();
-    const createPlugin = createContinuePlugin({
-      autopilotEnabled: true,
-      autopilotMaxAttempts: 3,
-    });
-    const plugin = await createPlugin({ client: mockClient });
-
-    const { writeAutopilotState } = await import('../src/autopilot.js');
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
-
-    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'waiting-indicator-session' } } } });
-
-    // Text matches WAITING_INDICATORS but has no question mark
-    mockClient.session.messages.mockResolvedValue({
-      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'I should proceed but would you like me to use approach A' }] }]
-    });
-
-    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'waiting-indicator-session' } } });
-
-    const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-    expect(lastCall.body.parts[0].text).toContain('AUTONOMOUS DECISION REQUIRED');
-    expect(lastCall.body.parts[0].text).toContain('I should proceed');
-  });
 });
 
 // ─── MEDIUM: completionSignal double-call idempotency ────────────────────────
