@@ -1,11 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
-import { resetAutopilotState, writeAutopilotState, readAutopilotState } from '../src/autopilot.js';
+import { resetAutopilotState } from '../src/autopilot.js';
+import { sessionState } from '../src/state.js';
 
 describe('TUI disable autopilot', () => {
-  it('selecting Disable Autopilot leaves autopilot disabled', async () => {
+  beforeEach(() => {
     resetAutopilotState();
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+    sessionState.clear();
+  });
+
+  it('selecting Disable Autopilot leaves autopilot disabled for session', async () => {
+    const SESSION_ID = 'cancel-test-1';
+    sessionState.set(SESSION_ID, { autopilotEnabled: true });
 
     let getCommandsFn: (() => any[]) | null = null;
 
@@ -19,6 +25,9 @@ describe('TUI disable autopilot', () => {
       ui: {
         toast: (_: any) => {},
       },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -26,13 +35,10 @@ describe('TUI disable autopilot', () => {
     const commands = getCommandsFn!();
     expect(commands[0].title).toBe('Disable Autopilot');
 
-    // Select command — autopilot disables directly
     commands[0].onSelect();
 
-    // State must be disabled
-    expect(readAutopilotState().enabled).toBe(false);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
 
-    // Fresh commands now show "Enable Autopilot"
     expect(getCommandsFn!()[0].title).toBe('Enable Autopilot');
   });
 });

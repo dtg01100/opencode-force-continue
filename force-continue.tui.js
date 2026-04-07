@@ -1,5 +1,5 @@
 import { sessionState } from "./src/state.js";
-import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
+import { setAutopilotEnabled } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
@@ -30,13 +30,9 @@ export const tui = async (api, options, meta) => {
 
     const getCommands = () => {
         const sessionID = getCurrentSessionID();
-        // Read global file as the source of truth for the toast.
-        // For the title/description, check session-level first (set by the plugin's
-        // setAutopilot tool or direct state manipulation), falling back to global.
-        const globalEnabled = readAutopilotState().enabled;
         const sessionMeta = sessionID ? sessionState.get(sessionID) : null;
         const hasSessionOverride = sessionMeta && Object.prototype.hasOwnProperty.call(sessionMeta, "autopilotEnabled");
-        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : globalEnabled;
+        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : false;
         const state = { enabled };
         return [
             {
@@ -48,12 +44,17 @@ export const tui = async (api, options, meta) => {
                 category: "Force Continue",
                 onSelect: () => {
                     const sessionID = getCurrentSessionID();
-                    // setAutopilotEnabled handles session-level AND global writes atomically,
-                    // and also clears stale session overrides when globally toggling.
+                    if (!sessionID) {
+                        showToast({
+                            message: "No active session",
+                            variant: "error",
+                        });
+                        return;
+                    }
                     setAutopilotEnabled(sessionID, !state.enabled);
 
-                    // Read back from the shared global file (source of truth across processes).
-                    const newEnabled = readAutopilotState().enabled;
+                    const sessionMeta = sessionState.get(sessionID);
+                    const newEnabled = sessionMeta?.autopilotEnabled ?? false;
                     showToast({
                         message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
                         variant: newEnabled ? "warning" : "info",

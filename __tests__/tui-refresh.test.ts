@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
-import { readAutopilotState, writeAutopilotState, resetAutopilotState } from '../src/autopilot.js';
+import { resetAutopilotState } from '../src/autopilot.js';
+import { sessionState } from '../src/state.js';
 
 describe('TUI refresh on toggle', () => {
-  it('getCommands callback always returns fresh state — no re-registration needed', async () => {
+  beforeEach(() => {
     resetAutopilotState();
-    writeAutopilotState({ enabled: false, timestamp: null });
+    sessionState.clear();
+  });
+
+  it('getCommands callback always returns fresh state — no re-registration needed', async () => {
+    const SESSION_ID = 'test-session-1';
 
     let getCommandsFn: (() => any[]) | null = null;
     let registerCalls = 0;
@@ -21,18 +26,19 @@ describe('TUI refresh on toggle', () => {
       ui: {
         toast: (_: any) => {},
       },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
     expect(registerCalls).toBe(1);
     expect(getCommandsFn!()[0].title).toBe('Enable Autopilot');
 
-    // Select command — autopilot enables directly
     getCommandsFn!()[0].onSelect();
 
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
 
-    // Re-registration is needed because the API may not re-call the provider callback
     expect(registerCalls).toBe(2);
     expect(getCommandsFn!()[0].title).toBe('Disable Autopilot');
   });

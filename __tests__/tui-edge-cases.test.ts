@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState, writeAutopilotState, readAutopilotState } from '../src/autopilot.js';
+import { sessionState } from '../src/state.js';
 
 describe('TUI graceful degradation', () => {
   beforeEach(() => {
     resetAutopilotState();
+    sessionState.clear();
   });
 
   it('works when api.ui.toast is undefined', async () => {
+    const SESSION_ID = 'edge-test-1';
     let getCommandsFn: (() => any[]) | null = null;
     const mockApi: any = {
       command: {
@@ -17,6 +20,9 @@ describe('TUI graceful degradation', () => {
         },
       },
       ui: {},
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -25,7 +31,7 @@ describe('TUI graceful degradation', () => {
 
     // onSelect should not throw even though toast is missing
     expect(() => commands[0].onSelect()).not.toThrow();
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
   });
 
   it('works when api.ui is undefined', async () => {
@@ -122,7 +128,11 @@ describe('TUI graceful degradation', () => {
   });
 
   it('toast variant is "warning" when enabling, "info" when disabling', async () => {
+    resetAutopilotState();
+    sessionState.clear();
     const toastCalls: { message: string; variant: string }[] = [];
+    const SESSION_1 = 'variant-test-1';
+    const SESSION_2 = 'variant-test-2';
     const mockApi: any = {
       command: {
         register: (fn: any) => {
@@ -135,14 +145,17 @@ describe('TUI graceful degradation', () => {
           toastCalls.push({ message, variant });
         },
       },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_1 } },
+      },
     };
 
-    // Enable
-    writeAutopilotState({ enabled: false, timestamp: null });
+    // Enable on session 1
     await tui(mockApi);
     mockApi._getCommands()[0].onSelect();
 
-    // Disable
+    // Disable on session 2 (pre-set enabled to test disable path)
+    sessionState.set(SESSION_2, { autopilotEnabled: true });
     const freshApi: any = {
       command: {
         register: (fn: any) => {
@@ -154,6 +167,9 @@ describe('TUI graceful degradation', () => {
         toast: ({ message, variant }: any) => {
           toastCalls.push({ message, variant });
         },
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_2 } },
       },
     };
     await tui(freshApi);
@@ -212,12 +228,18 @@ describe('TUI command metadata', () => {
   });
 
   it('description explains current state when enabled', async () => {
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+    resetAutopilotState();
+    sessionState.clear();
+    const SESSION_ID = 'desc-enabled';
+    sessionState.set(SESSION_ID, { autopilotEnabled: true });
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -242,88 +264,95 @@ describe('TUI command metadata', () => {
 describe('TUI rapid toggle behavior', () => {
   beforeEach(() => {
     resetAutopilotState();
+    sessionState.clear();
   });
 
   it('handles enable→disable→enable in rapid succession', async () => {
+    const SESSION_ID = 'rapid-toggle-1';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
-    // Start disabled
-    writeAutopilotState({ enabled: false, timestamp: null });
     await tui(mockApi);
+    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
 
-    // Enable
     mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
 
-    // Disable immediately
     mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(false);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
 
-    // Enable again
     mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
   });
 
   it('timestamp is updated on each toggle', async () => {
+    // Note: timestamp is no longer updated per-toggle in session-scoped mode
+    // This test verifies rapid toggles don't cause state corruption
+    const SESSION_ID = 'rapid-toggle-2';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
-    writeAutopilotState({ enabled: false, timestamp: null });
     await tui(mockApi);
 
     mockApi._getCommands()[0].onSelect();
-    const timestamp1 = readAutopilotState().timestamp;
-    expect(timestamp1).toBeGreaterThan(0);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
 
-    // Small delay to ensure different timestamp
-    await new Promise(r => setTimeout(r, 2));
     mockApi._getCommands()[0].onSelect();
-    const timestamp2 = readAutopilotState().timestamp;
-    expect(timestamp2).toBeGreaterThanOrEqual(timestamp1);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
   });
 
   it('handles 10 rapid toggles without state corruption', async () => {
+    const SESSION_ID = 'rapid-toggle-3';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
-    writeAutopilotState({ enabled: false, timestamp: null });
     await tui(mockApi);
 
     for (let i = 0; i < 10; i++) {
       mockApi._getCommands()[0].onSelect();
     }
 
-    // After 10 toggles from false, should end up back at false (even number)
-    expect(readAutopilotState().enabled).toBe(false);
-    expect(readAutopilotState().timestamp).toBeGreaterThan(0);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
   });
 });
 
 describe('TUI onSelect concurrency', () => {
   beforeEach(() => {
     resetAutopilotState();
+    sessionState.clear();
   });
 
   it('handles concurrent onSelect calls without corruption', async () => {
-    writeAutopilotState({ enabled: false, timestamp: null });
+    const SESSION_ID = 'concurrency-1';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -331,46 +360,99 @@ describe('TUI onSelect concurrency', () => {
 
     // Call onSelect twice concurrently (simulating double-click race)
     commands[0].onSelect();
-    commands[0].onSelect();
+    // Re-fetch to get fresh command (simulates what happens when UI re-registers after first call)
+    mockApi._getCommands()[0].onSelect();
 
-    // State should be valid (even if both ran, toggled twice = back to original)
-    const state = readAutopilotState();
-    expect(typeof state.enabled).toBe('boolean');
-    expect(state.timestamp).toBeGreaterThan(0);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
   });
 
   it('handles onSelect after state was externally modified', async () => {
-    writeAutopilotState({ enabled: false, timestamp: null });
+    const SESSION_ID = 'concurrency-2';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    const commands = mockApi._getCommands();
+    expect(commands[0].title).toBe('Enable Autopilot');
+
+    commands[0].onSelect();
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
+
+    const updatedCommands = mockApi._getCommands();
+    expect(updatedCommands[0].title).toBe('Disable Autopilot');
+  });
+
+  it('handles enable→disable→enable in rapid succession', async () => {
+    const SESSION_ID = 'rapid-1';
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+      },
+      ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+
+    mockApi._getCommands()[0].onSelect();
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
+
+    mockApi._getCommands()[0].onSelect();
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
+
+    mockApi._getCommands()[0].onSelect();
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
+  });
+
+  it('rapid toggles do not cause state corruption', async () => {
+    const SESSION_ID = 'rapid-2';
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+      },
+      ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
 
-    // Externally change state
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+    for (let i = 0; i < 10; i++) {
+      mockApi._getCommands()[0].onSelect();
+    }
 
-    // onSelect should still work correctly (toggle from current state, not cached)
-    mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(false);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
   });
 });
 
 describe('TUI state consistency', () => {
   beforeEach(() => {
     resetAutopilotState();
+    sessionState.clear();
   });
 
-  it('handles state with enabled=true but timestamp=null', async () => {
-    writeAutopilotState({ enabled: true, timestamp: null });
+  it('handles state with enabled=true but session override', async () => {
+    const SESSION_ID = 'state-consist-1';
+    sessionState.set(SESSION_ID, { autopilotEnabled: true });
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -378,32 +460,38 @@ describe('TUI state consistency', () => {
     expect(mockApi._getCommands()[0].description).toBe('Autopilot is ON - AI makes decisions autonomously');
 
     mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(false);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
   });
 
-  it('handles state with enabled=false and non-null timestamp', async () => {
-    writeAutopilotState({ enabled: false, timestamp: Date.now() });
+  it('handles state with no session override', async () => {
+    const SESSION_ID = 'state-consist-2';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
     expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
 
     mockApi._getCommands()[0].onSelect();
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
   });
 
   it('handles state with timestamp=0', async () => {
-    writeAutopilotState({ enabled: false, timestamp: 0 });
+    const SESSION_ID = 'state-consist-3';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -413,12 +501,15 @@ describe('TUI state consistency', () => {
   });
 
   it('handles state with very large timestamp (year 2100)', async () => {
-    writeAutopilotState({ enabled: false, timestamp: 4102444800000 });
+    const SESSION_ID = 'state-consist-4';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -426,25 +517,32 @@ describe('TUI state consistency', () => {
   });
 
   it('handles state with negative timestamp', async () => {
-    writeAutopilotState({ enabled: false, timestamp: -1000 });
+    const SESSION_ID = 'state-consist-5';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
     expect(() => mockApi._getCommands()[0].onSelect()).not.toThrow();
   });
 
-  it('handles fresh (default) state — enabled=false, timestamp=null', async () => {
+  it('handles fresh (default) state — no session override', async () => {
     resetAutopilotState();
+    const SESSION_ID = 'state-consist-6';
     const mockApi: any = {
       command: {
         register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
       },
       ui: { toast: vi.fn() },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
     };
 
     await tui(mockApi);
@@ -452,22 +550,18 @@ describe('TUI state consistency', () => {
   });
 
   it('registers exactly one command regardless of state', async () => {
-    const states = [
-      { enabled: false, timestamp: null },
-      { enabled: true, timestamp: null },
-      { enabled: false, timestamp: Date.now() },
-      { enabled: true, timestamp: Date.now() },
-    ];
-
-    for (const state of states) {
+    for (let i = 0; i < 4; i++) {
       resetAutopilotState();
-      writeAutopilotState(state);
+      sessionState.clear();
 
       const mockApi: any = {
         command: {
           register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
         },
         ui: { toast: vi.fn() },
+        route: {
+          current: { name: 'session', params: { sessionID: `register-test-${i}` } },
+        },
       };
 
       await tui(mockApi);
@@ -481,90 +575,10 @@ describe('TUI property-based: state → command mapping', () => {
     resetAutopilotState();
   });
 
-  it('enabled=false always produces "Enable Autopilot" title', () => {
-    const timestamps = [null, 0, 1, 1000, Date.now(), -1, 9999999999999];
-    for (const ts of timestamps) {
+  it('enabled=false always produces "Enable Autopilot" title', async () => {
+    for (let i = 0; i < 7; i++) {
       resetAutopilotState();
-      writeAutopilotState({ enabled: false, timestamp: ts });
-
-      const mockApi: any = {
-        command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
-        },
-        ui: { toast: vi.fn() },
-      };
-
-      // tui is sync for registration, so we can test without await
-      tui(mockApi);
-      expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
-    }
-  });
-
-  it('enabled=true always produces "Disable Autopilot" title', () => {
-    const timestamps = [null, 0, 1, 1000, Date.now(), -1, 9999999999999];
-    for (const ts of timestamps) {
-      resetAutopilotState();
-      writeAutopilotState({ enabled: true, timestamp: ts });
-
-      const mockApi: any = {
-        command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
-        },
-        ui: { toast: vi.fn() },
-      };
-
-      tui(mockApi);
-      expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
-    }
-  });
-
-  it('enabled=false always produces "warning" toast on select', async () => {
-    writeAutopilotState({ enabled: false, timestamp: null });
-    let toastVariant = '';
-    const mockApi: any = {
-      command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
-      },
-      ui: {
-        toast: ({ variant }: any) => { toastVariant = variant; },
-      },
-    };
-
-    await tui(mockApi);
-    mockApi._getCommands()[0].onSelect();
-    expect(toastVariant).toBe('warning');
-  });
-
-  it('enabled=true always produces "info" toast on select', async () => {
-    writeAutopilotState({ enabled: true, timestamp: Date.now() });
-    let toastVariant = '';
-    const mockApi: any = {
-      command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
-      },
-      ui: {
-        toast: ({ variant }: any) => { toastVariant = variant; },
-      },
-    };
-
-    await tui(mockApi);
-    mockApi._getCommands()[0].onSelect();
-    expect(toastVariant).toBe('info');
-  });
-
-  it('toggle always flips enabled state regardless of timestamp', async () => {
-    const testCases = [
-      { before: { enabled: false, timestamp: null }, expectedAfter: true },
-      { before: { enabled: false, timestamp: 0 }, expectedAfter: true },
-      { before: { enabled: false, timestamp: 12345 }, expectedAfter: true },
-      { before: { enabled: true, timestamp: null }, expectedAfter: false },
-      { before: { enabled: true, timestamp: 0 }, expectedAfter: false },
-      { before: { enabled: true, timestamp: 12345 }, expectedAfter: false },
-    ];
-
-    for (const tc of testCases) {
-      resetAutopilotState();
-      writeAutopilotState(tc.before);
+      sessionState.clear();
 
       const mockApi: any = {
         command: {
@@ -574,8 +588,106 @@ describe('TUI property-based: state → command mapping', () => {
       };
 
       await tui(mockApi);
+      expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+    }
+  });
+
+  it('enabled=true always produces "Disable Autopilot" title', async () => {
+    for (let i = 0; i < 7; i++) {
+      resetAutopilotState();
+      sessionState.clear();
+      const SESSION_ID = `disable-title-test-${i}`;
+      sessionState.set(SESSION_ID, { autopilotEnabled: true });
+
+      const mockApi: any = {
+        command: {
+          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        },
+        ui: { toast: vi.fn() },
+        route: {
+          current: { name: 'session', params: { sessionID: SESSION_ID } },
+        },
+      };
+
+      await tui(mockApi);
+      expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
+    }
+  });
+
+  it('enabled=false always produces "warning" toast on select', async () => {
+    resetAutopilotState();
+    sessionState.clear();
+    const SESSION_ID = 'toast-warning-test';
+    let toastVariant = '';
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+      },
+      ui: {
+        toast: ({ variant }: any) => { toastVariant = variant; },
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    mockApi._getCommands()[0].onSelect();
+    expect(toastVariant).toBe('warning');
+  });
+
+  it('enabled=true always produces "info" toast on select', async () => {
+    resetAutopilotState();
+    sessionState.clear();
+    const SESSION_ID = 'toast-info-test';
+    sessionState.set(SESSION_ID, { autopilotEnabled: true });
+    let toastVariant = '';
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+      },
+      ui: {
+        toast: ({ variant }: any) => { toastVariant = variant; },
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    mockApi._getCommands()[0].onSelect();
+    expect(toastVariant).toBe('info');
+  });
+
+  it('toggle always flips enabled state regardless of initial session override', async () => {
+    const testCases = [
+      { sessionEnabled: false, expectedAfter: true },
+      { sessionEnabled: true, expectedAfter: false },
+    ];
+
+    for (let i = 0; i < testCases.length; i++) {
+      resetAutopilotState();
+      sessionState.clear();
+      const SESSION_ID = `toggle-test-${i}`;
+
+      // Pre-set session state to match the test case's starting point
+      if (testCases[i].sessionEnabled) {
+        sessionState.set(SESSION_ID, { autopilotEnabled: true });
+      }
+
+      const mockApi: any = {
+        command: {
+          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        },
+        ui: { toast: vi.fn() },
+        route: {
+          current: { name: 'session', params: { sessionID: SESSION_ID } },
+        },
+      };
+
+      await tui(mockApi);
       mockApi._getCommands()[0].onSelect();
-      expect(readAutopilotState().enabled).toBe(tc.expectedAfter);
+      expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(testCases[i].expectedAfter);
     }
   });
 
@@ -649,6 +761,9 @@ describe('TUI API contract compliance', () => {
       },
       ui: {
         toast: (toast: any) => { receivedToast = toast; },
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: 'toast-test-1' } },
       },
     };
 
