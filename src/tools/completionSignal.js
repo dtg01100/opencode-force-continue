@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { sessionState, isTaskDone } from "../state.js";
 import { metrics } from "../metrics.js";
+import { getUnfinishedTasks } from "../utils.js";
 
 export function createCompletionSignalTool(ctx, config) {
     return tool({
@@ -31,23 +32,7 @@ export function createCompletionSignalTool(ctx, config) {
             }
             let unfinishedTasks = [];
             try {
-                const getTasksCandidates = [
-                    ctx?.hooks?.getTasksByParentSession,
-                    ctx?.hooks?.backgroundManager?.getTasksByParentSession,
-                    ctx?.getTasksByParentSession,
-                    ctx?.backgroundManager?.getTasksByParentSession,
-                ];
-                for (const fn of getTasksCandidates) {
-                    if (typeof fn !== "function") continue;
-                    try {
-                        const result = await fn(sessionID);
-                        const tasks = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : []);
-                        if (tasks.length > 0) {
-                            unfinishedTasks = tasks.filter(t => t && t.status && !isTaskDone(t.status));
-                            break;
-                        }
-                    } catch {}
-                }
+                unfinishedTasks = await getUnfinishedTasks(ctx, sessionID, ctx?.logger);
             } catch (e) {
                 if (ctx?.logger) ctx.logger.error("Failed to query tasks on completion", { error: e?.stack ?? e });
             }

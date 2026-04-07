@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { getAutopilotEnabled as getAutopilotEnabledFromState, setAutopilotEnabled as setAutopilotEnabledInState } from "./state.js";
+import { sessionState, getAutopilotEnabled as getAutopilotEnabledFromState, setAutopilotEnabled as setAutopilotEnabledInState } from "./state.js";
 
 let autopilotState = { enabled: false, timestamp: null };
 
@@ -66,14 +66,29 @@ export function buildAutopilotPrompt(question, context, options) {
 }
 
 export function getAutopilotEnabled(config, sessionID) {
+    // Check session-level state if sessionID is provided
     if (sessionID) {
-        return getAutopilotEnabledFromState(sessionID);
+        const meta = sessionState.get(sessionID) || {};
+        // If session has explicitly set autopilotEnabled, use that value
+        if ('autopilotEnabled' in meta) {
+            return meta.autopilotEnabled;
+        }
     }
+    // Fall back to global file store
     const stored = readAutopilotState();
     if (stored.timestamp !== null) return stored.enabled;
+    // Fall back to config
     return config?.autopilotEnabled ?? false;
 }
 
 export function setAutopilotEnabled(sessionID, enabled) {
     setAutopilotEnabledInState(sessionID, enabled);
+    // Also update global file store for TUI and cross-process visibility
+    writeAutopilotState({ enabled, timestamp: Date.now() });
+}
+
+const DEFAULT_AUTOPILOT_MAX_ATTEMPTS = 3;
+
+export function getAutopilotMaxAttempts(config) {
+    return config?.autopilotMaxAttempts ?? DEFAULT_AUTOPILOT_MAX_ATTEMPTS;
 }

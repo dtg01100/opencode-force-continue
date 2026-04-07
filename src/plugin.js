@@ -22,11 +22,29 @@ import {
 } from "./handlers/index.js";
 import { createValidateTool } from "./tools/validate.js";
 
-export { sessionState, updateLastSeen, readState, isTaskDone, isSubagentSession, getAutopilotEnabled, setAutopilotEnabled } from "./state.js";
+export {
+    sessionState,
+    updateLastSeen,
+    readState,
+    isTaskDone,
+    isSubagentSession,
+    // Note: setAutopilotEnabled is exported from autopilot.js, not state.js
+    cleanupExpiredSessions,
+    startPeriodicCleanup,
+    stopPeriodicCleanup,
+    setSessionTtl,
+    getSessionTtl,
+    getActiveSessionCount,
+} from "./state.js";
 export { createMetricsTracker, resetMetrics } from "./metrics.js";
 export { resolveConfig, DEFAULT_CONFIG } from "./config.js";
 export { createFileStore, createHybridStore } from "./persistence.js";
-export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState, setAutopilotEnabled } from "./autopilot.js";
+export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState, setAutopilotEnabled, readAutopilotState, writeAutopilotState } from "./autopilot.js";
+
+// Start periodic cleanup of expired sessions (runs every hour by default)
+// Uses sessionTtlMs from resolved config
+import { startPeriodicCleanup } from "./state.js";
+startPeriodicCleanup(60 * 60 * 1000, resolveConfig().sessionTtlMs);
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };

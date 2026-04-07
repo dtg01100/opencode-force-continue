@@ -90,6 +90,7 @@ Behavior summary:
 | `FORCE_CONTINUE_LOG_TO_STDOUT` | `false` | Log plugin activity to stdout in addition to OpenCode's logger |
 | `FORCE_CONTINUE_AUTOPILOT_ENABLED` | `false` | Enable autopilot mode for auto-answering guidance requests |
 | `FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS` | `3` | Max auto-answer attempts before falling back to user input |
+| `FORCE_CONTINUE_SESSION_TTL_MS` | `86400000` (24h) | Session time-to-live before cleanup; sessions inactive beyond this are removed |
 
 ### Config File
 
@@ -108,6 +109,7 @@ Create `.opencode/force-continue.json` or `force-continue.config.json` in your p
   "enableTaskTracking": true,
   "enableCompletionSummary": true,
   "logToStdout": false,
+  "sessionTtlMs": 86400000,
   "ignoreTools": ["read", "glob", "grep"],
   "dangerousCommands": ["rm -rf /", "rm -rf ~"]
 }
@@ -122,6 +124,7 @@ The plugin is intentionally lightweight:
 - All runtime state is kept in-memory per process and keyed by the OpenCode session ID. This keeps the code simple and avoids external storage dependencies.
 - State is cleaned up when a session ends or is deleted; because state is in-memory, multiple server instances do not share session state.
 - An optional file-based persistence layer is available for cross-process state sharing (see `createFileStore` and `createHybridStore` exports).
+- The single `event` handler delegates to two sub-handlers: `createFileEventsHandler` (handles `file.edited` events) and `createSessionEventsHandler` (handles `session.created`, `session.idle`, `session.deleted`, and `message.part.updated`). Both are wrapped in the main event handler with error isolation so a failure in one does not block the other.
 
 ## How it works
 
@@ -140,7 +143,8 @@ Key components (in `force-continue.server.js`):
   - `statusReport` — lets the model report progress without ending the session, resetting the continuation counter.
   - `requestGuidance` — lets the model ask the user for clarification, pausing auto-continue until the user responds.
   - `pauseAutoContinue` — temporarily suspends auto-continue prompts while the model plans.
-  - `healthCheck` — returns plugin metrics, session counts, and configuration status.
+  - `healthCheck` — returns plugin metrics, session counts, autopilot status, and configuration.
+  - `setAutopilot` — enables or disables autopilot mode globally or per-session.
 - Message & event handlers:
   - `chat.message` — updates per-session lastSeen, resets continuation counters, and clears paused/guidance state. Does NOT reset completion state — `completionSignal` is a hard termination.
   - `experimental.chat.system.transform` — injects a system instruction telling the model to call `completionSignal` when finished, with explicit instructions to treat it as a hard termination.
@@ -167,15 +171,16 @@ Helpers and extension points:
 - `createFileStore(baseDir)` — creates a file-based persistence store for cross-process state.
 - `createHybridStore(inMemoryMap, fileStore)` — creates a hybrid store that reads from memory first, falling back to file storage.
 - `createMetricsTracker()` — creates a metrics tracker for observability. Tracks idle events, prompt types (continue, escalation, loop-break, completion nudge), circuit breaker trips, and per-session error counts.
-- Exported helpers for operational or debug use: `updateLastSeen`, `readState`.
+- Exported helpers for operational or debug use: `updateLastSeen`, `readState`, `readAutopilotState`, `writeAutopilotState`.
 - To add cross-process persistence, replace the in-memory `sessionState` Map or adapt the plugin to call an external store inside the helper functions.
 - If you have a background task manager or a task babysitter hook, connect it via `ctx.hooks` so the plugin can defer to those systems instead of auto-continuing.
 
 Debugging tips:
 
 - Use the `validate` tool in `probe` mode to ensure `promptAsync` is available and that a session accepts prompts.
-- Use the `healthCheck` tool with `detail: 'full'` to get a complete snapshot of plugin state, metrics, and configuration.
+- Use the `healthCheck` tool with `detail: 'full'` to get a complete snapshot of plugin state, metrics, autopilot status, and configuration.
 - Inspect `readState()` (exported) to get a snapshot of tracked sessions and metrics.
+- Inspect `readAutopilotState()` (exported) to check the current global autopilot file-store state.
 - Set `FORCE_CONTINUE_LOG_TO_STDOUT=true` to log plugin activity to stdout in addition to OpenCode's logger.
 
 ## Tools Reference
@@ -234,14 +239,25 @@ Temporarily suspend auto-continue prompts.
 pauseAutoContinue(reason='Need time to plan', estimatedTime='5 minutes')
 ```
 
-### healthCheck
+### setAutopilot
 
-Check plugin health and metrics.
+Enable or disable autopilot mode. Supports both global and per-session control. When `sessionID` is provided, sets autopilot for that specific session; otherwise sets the global autopilot state.
 
 ```
-healthCheck(detail='summary')   // One-line summary
-healthCheck(detail='sessions')  // Active session count + metrics
-healthCheck(detail='full')      // Full JSON dump
+setAutopilot(enabled=true)                    // Enable globally
+setAutopilot(enabled=false)                   // Disable globally
+setAutopilot(enabled=true, sessionID='...')   // Enable for a specific session
+setAutopilot(enabled=false, sessionID='...') // Disable for a specific session
+```
+
+### healthCheck
+
+Check plugin health and metrics. Returns autopilot status in all detail levels.
+
+```
+healthCheck(detail='summary')   // One-line summary with autopilot state
+healthCheck(detail='sessions')  // Active session count + metrics + autopilot
+healthCheck(detail='full')      // Full JSON dump including autopilot config
 ```
 
 ## Development

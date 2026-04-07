@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG = {
     autopilotEnabled: false,
     autopilotMaxAttempts: 3,
     skipNudgeInSubagents: true,
+    sessionTtlMs: 24 * 60 * 60 * 1000,
 };
 
 function safeParseInt(value, fallback) {
@@ -49,6 +50,8 @@ export function resolveConfig() {
         envConfig.skipNudgeInSubagents = process.env.FORCE_CONTINUE_SKIP_NUDGE_IN_SUBAGENTS !== "false";
     if (process.env.FORCE_CONTINUE_ENABLE_SYSTEM_PROMPT_INJECTION !== undefined)
         envConfig.enableSystemPromptInjection = process.env.FORCE_CONTINUE_ENABLE_SYSTEM_PROMPT_INJECTION !== "false";
+    if (process.env.FORCE_CONTINUE_SESSION_TTL_MS)
+        envConfig.sessionTtlMs = safeParseInt(process.env.FORCE_CONTINUE_SESSION_TTL_MS, DEFAULT_CONFIG.sessionTtlMs);
 
     let fileConfig = {};
     const configPaths = [

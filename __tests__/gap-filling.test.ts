@@ -454,6 +454,75 @@ describe('setAutopilot tool', () => {
     const { readAutopilotState } = await import('../src/autopilot.js');
     expect(readAutopilotState().enabled).toBe(false);
   });
+
+  it('should set session-level autopilot when sessionID argument is provided', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    const { sessionState } = await import('../src/state.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.setAutopilot;
+    const result = await toolDef.execute({ enabled: true, sessionID: 'my-session' });
+
+    expect(result).toBe('Autopilot enabled for session my-session.');
+    expect(sessionState.get('my-session')?.autopilotEnabled).toBe(true);
+
+    // Global autopilot state should also be updated
+    const { readAutopilotState } = await import('../src/autopilot.js');
+    expect(readAutopilotState().enabled).toBe(true);
+  });
+
+  it('should disable session-level autopilot when sessionID argument is provided', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    const { sessionState } = await import('../src/state.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.setAutopilot;
+    const result = await toolDef.execute({ enabled: false, sessionID: 'another-session' });
+
+    expect(result).toBe('Autopilot disabled for session another-session.');
+    expect(sessionState.get('another-session')?.autopilotEnabled).toBe(false);
+  });
+
+  it('should use toolCtx sessionID when sessionID argument is not provided', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    const { sessionState } = await import('../src/state.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.setAutopilot;
+    const result = await toolDef.execute({ enabled: true }, { sessionID: 'toolctx-session' } as any);
+
+    expect(result).toBe('Autopilot enabled for session toolctx-session.');
+    expect(sessionState.get('toolctx-session')?.autopilotEnabled).toBe(true);
+  });
+
+  it('should prefer explicit sessionID argument over toolCtx sessionID', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    const { sessionState } = await import('../src/state.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.setAutopilot;
+    const result = await toolDef.execute({ enabled: true, sessionID: 'explicit-session' }, { sessionID: 'toolctx-session' } as any);
+
+    expect(result).toBe('Autopilot enabled for session explicit-session.');
+    expect(sessionState.get('explicit-session')?.autopilotEnabled).toBe(true);
+    expect(sessionState.get('toolctx-session')?.autopilotEnabled).toBeUndefined();
+  });
 });
 
 // ─── MEDIUM: enableSystemPromptInjection: false path ─────────────────────────
@@ -1195,6 +1264,56 @@ describe('healthCheck with default detail', () => {
     expect(result).toContain('Plugin health');
     expect(result).toContain('sessions');
   });
+
+  it('should include autopilot status in summary output', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.healthCheck;
+    const result = await toolDef.execute({ detail: 'summary' });
+
+    expect(result).toContain('autopilot');
+    expect(result).toMatch(/autopilot (enabled|disabled)/);
+  });
+
+  it('should include autopilot status in sessions output', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.healthCheck;
+    const result = await toolDef.execute({ detail: 'sessions' });
+
+    expect(result).toContain('Autopilot');
+    expect(result).toMatch(/Autopilot: (enabled|disabled)/);
+    expect(result).toContain('(global)');
+  });
+
+  it('should include autopilot object in full JSON output', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    const toolDef = plugin.tool.healthCheck;
+    const result = await toolDef.execute({ detail: 'full' });
+
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveProperty('autopilot');
+    expect(parsed.autopilot).toHaveProperty('enabled');
+    expect(parsed.autopilot).toHaveProperty('timestamp');
+    expect(parsed.config).toHaveProperty('autopilotEnabled');
+    expect(parsed.config).toHaveProperty('autopilotMaxAttempts');
+  });
 });
 
 // ─── LOW: plugin return object shape ─────────────────────────────────────────
@@ -1238,5 +1357,46 @@ describe('plugin return object shape', () => {
     for (const key of expectedToolKeys) {
       expect(plugin.tool).toHaveProperty(key);
     }
+  });
+});
+
+// ─── MEDIUM: readAutopilotState and writeAutopilotState exports ─────────────────
+
+describe('readAutopilotState and writeAutopilotState exports', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('should export readAutopilotState and writeAutopilotState from force-continue.server.js', async () => {
+    const server = await import('../force-continue.server.js');
+    expect(typeof server.readAutopilotState).toBe('function');
+    expect(typeof server.writeAutopilotState).toBe('function');
+  });
+
+  it('should export readAutopilotState and writeAutopilotState from src/autopilot.js', async () => {
+    const autopilot = await import('../src/autopilot.js');
+    expect(typeof autopilot.readAutopilotState).toBe('function');
+    expect(typeof autopilot.writeAutopilotState).toBe('function');
+  });
+
+  it('should write and read autopilot state round-trip', async () => {
+    const { writeAutopilotState, readAutopilotState, resetAutopilotState } = await import('../src/autopilot.js');
+    resetAutopilotState();
+
+    writeAutopilotState({ enabled: true, timestamp: 1234567890 });
+    const state = readAutopilotState();
+    expect(state.enabled).toBe(true);
+    expect(state.timestamp).toBe(1234567890);
+
+    writeAutopilotState({ enabled: false, timestamp: null });
+    const state2 = readAutopilotState();
+    expect(state2.enabled).toBe(false);
+  });
+
+  it('should throw on invalid writeAutopilotState input', async () => {
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    expect(() => { writeAutopilotState(null); }).toThrow();
+    expect(() => { writeAutopilotState(undefined); }).toThrow();
+    expect(() => { writeAutopilotState('not an object'); }).toThrow();
   });
 });

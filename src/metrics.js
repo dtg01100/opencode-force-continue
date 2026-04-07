@@ -56,6 +56,9 @@ function createMetricsTracker() {
                 case "prompt.completion.nudge": metrics.promptCompletionNudge++; break;
                 case "autopilot.attempt": metrics.totalAutopilotAttempts++; break;
                 case "autopilot.fallback": metrics.totalAutopilotFallbacks++; break;
+                case "autopilot.fallback.question": metrics.totalAutopilotFallbacks++; break;
+                case "autopilot.question.attempt": metrics.totalAutopilotAttempts++; break;
+                case "completion.with.unfinished.tasks": metrics.totalCompletions++; break;
             }
         },
         reset() {

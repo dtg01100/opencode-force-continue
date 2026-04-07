@@ -1753,6 +1753,19 @@ describe('resolveConfig', () => {
     const plugin = await createPlugin({ client: mockClient });
     expect(plugin).toBeDefined();
   });
+
+  it('should parse FORCE_CONTINUE_SESSION_TTL_MS env var', async () => {
+    process.env.FORCE_CONTINUE_SESSION_TTL_MS = '3600000';
+    const { resolveConfig } = await import('../force-continue.server.js');
+    const config = resolveConfig();
+    expect(config.sessionTtlMs).toBe(3600000);
+  });
+
+  it('should use default sessionTtlMs when env var not set', async () => {
+    const { resolveConfig } = await import('../force-continue.server.js');
+    const config = resolveConfig();
+    expect(config.sessionTtlMs).toBe(24 * 60 * 60 * 1000);
+  });
 });
 
 describe('createMetricsTracker - all events', () => {

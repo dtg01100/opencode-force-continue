@@ -1,5 +1,6 @@
 import { sessionState, updateLastSeen, isTaskDone, isSubagentSession } from "../state.js";
 import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt } from "../autopilot.js";
+import { getUnfinishedTasks } from "../utils.js";
 
 function resolveSessionID(event) {
     if (event.type === "session.created") {
@@ -395,28 +396,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             let unfinishedTasks = [];
             if (config.enableTaskTracking) {
-                try {
-                    const getTasksCandidates = [
-                        ctx?.hooks?.getTasksByParentSession,
-                        ctx?.hooks?.backgroundManager?.getTasksByParentSession,
-                        ctx?.getTasksByParentSession,
-                        ctx?.backgroundManager?.getTasksByParentSession,
-                    ];
-
-                    for (const fn of getTasksCandidates) {
-                        if (typeof fn !== "function") continue;
-                        try {
-                            const result = await fn(sessionID);
-                            const tasks = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : []);
-                            if (tasks.length > 0) {
-                                unfinishedTasks = tasks.filter(t => t && t.status && !isTaskDone(t.status));
-                                break;
-                            }
-                        } catch {}
-                    }
-                } catch (e) {
-                    log("error", "Failed to query tasks", { error: e?.stack ?? e });
-                }
+                unfinishedTasks = await getUnfinishedTasks(ctx, sessionID, log);
             }
 
             if (unfinishedTasks.length > 0) {
