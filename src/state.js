@@ -93,11 +93,10 @@ export function getActiveSessionCount() {
 
 export function getAutopilotEnabled(sessionID) {
     const meta = sessionState.get(sessionID) || {};
-    // Only return autopilotEnabled if it was explicitly set on the session
     if ('autopilotEnabled' in meta) {
         return meta.autopilotEnabled;
     }
-    return null;  // Indicate no explicit session-level setting
+    return null;
 }
 
 export function setAutopilotEnabled(sessionID, enabled) {

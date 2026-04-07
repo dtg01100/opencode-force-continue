@@ -16,6 +16,7 @@ function createMetricsTracker() {
         totalIdleSkippedBabysitter: 0,
         totalIdleSkippedDisabled: 0,
         totalIdleSkippedSubagent: 0,
+        totalIdleSkippedAwaiting: 0,
         totalMessagesEmpty: 0,
         totalLastMsgNotAssistant: 0,
         totalAutopilotAttempts: 0,
@@ -48,6 +49,7 @@ function createMetricsTracker() {
                 case "idle.skipped.babysitter": metrics.totalIdleSkippedBabysitter++; break;
                 case "idle.skipped.disabled": metrics.totalIdleSkippedDisabled++; break;
                 case "idle.skipped.subagent": metrics.totalIdleSkippedSubagent++; break;
+                case "idle.skipped.awaiting.answer": metrics.totalIdleSkippedAwaiting++; break;
                 case "messages.empty": metrics.totalMessagesEmpty++; break;
                 case "last.msg.not.assistant": metrics.totalLastMsgNotAssistant++; break;
                 case "prompt.continue": metrics.promptContinue++; break;
@@ -78,6 +80,7 @@ function createMetricsTracker() {
             metrics.totalIdleSkippedBabysitter = 0;
             metrics.totalIdleSkippedDisabled = 0;
             metrics.totalIdleSkippedSubagent = 0;
+            metrics.totalIdleSkippedAwaiting = 0;
             metrics.totalMessagesEmpty = 0;
             metrics.totalLastMsgNotAssistant = 0;
             metrics.totalAutopilotAttempts = 0;
@@ -111,6 +114,7 @@ function createMetricsTracker() {
                 idleSkippedBabysitter: metrics.totalIdleSkippedBabysitter,
                 idleSkippedDisabled: metrics.totalIdleSkippedDisabled,
                 idleSkippedSubagent: metrics.totalIdleSkippedSubagent,
+                idleSkippedAwaiting: metrics.totalIdleSkippedAwaiting,
                 messagesEmpty: metrics.totalMessagesEmpty,
                 lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
                 totalAutopilotAttempts: metrics.totalAutopilotAttempts,

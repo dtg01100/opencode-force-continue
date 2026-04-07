@@ -19,7 +19,15 @@ export function createSetAutopilotTool(config, log) {
                 log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool for session ${effectiveSessionID}`);
                 return `Autopilot ${enabled ? "enabled" : "disabled"} for session ${effectiveSessionID}.`;
             } else {
+                // Globally toggling: write global state and clear ALL session-level overrides
+                // so no stale per-session setting can shadow the global value.
                 writeAutopilotState({ enabled, timestamp: Date.now() });
+                for (const [sid, meta] of sessionState) {
+                    if (Object.prototype.hasOwnProperty.call(meta, "autopilotEnabled")) {
+                        delete meta.autopilotEnabled;
+                        sessionState.set(sid, meta);
+                    }
+                }
                 log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool (global)`);
                 return `Autopilot ${enabled ? "enabled" : "disabled"}.`;
             }

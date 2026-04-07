@@ -197,7 +197,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             // Check if AI asked a question and is waiting for user input
             const aiAskedQuestion = containsQuestion(contextText);
-            const autopilotEnabled = getAutopilotEnabled(config);
+            const autopilotEnabled = getAutopilotEnabled(config, sessionID);
 
             if (aiAskedQuestion) {
                 if (autopilotEnabled) {

@@ -1,5 +1,5 @@
-import { setAutopilotEnabled, getAutopilotEnabled as getSessionAutopilotEnabled } from "./src/state.js";
-import { getAutopilotEnabled as getGlobalAutopilotEnabled, readAutopilotState, writeAutopilotState } from "./src/autopilot.js";
+import { sessionState } from "./src/state.js";
+import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
 
@@ -30,16 +30,13 @@ export const tui = async (api, options, meta) => {
 
     const getCommands = () => {
         const sessionID = getCurrentSessionID();
-        // Check session-level state first, fall back to global file store
-        let enabled = null;
-        if (sessionID) {
-            enabled = getSessionAutopilotEnabled(sessionID);
-        }
-        // Only fall back to global state if session has no explicit setting (null)
-        if (enabled === null) {
-            const globalState = readAutopilotState();
-            enabled = globalState.enabled;
-        }
+        // Read global file as the source of truth for the toast.
+        // For the title/description, check session-level first (set by the plugin's
+        // setAutopilot tool or direct state manipulation), falling back to global.
+        const globalEnabled = readAutopilotState().enabled;
+        const sessionMeta = sessionID ? sessionState.get(sessionID) : null;
+        const hasSessionOverride = sessionMeta && Object.prototype.hasOwnProperty.call(sessionMeta, "autopilotEnabled");
+        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : globalEnabled;
         const state = { enabled };
         return [
             {
@@ -51,21 +48,15 @@ export const tui = async (api, options, meta) => {
                 category: "Force Continue",
                 onSelect: () => {
                     const sessionID = getCurrentSessionID();
-                    // Toggle session-level autopilot if session exists, otherwise toggle global
-                    if (sessionID) {
-                        const current = getSessionAutopilotEnabled(sessionID);
-                        const newEnabled = !current;
-                        setAutopilotEnabled(sessionID, newEnabled);
-                        writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
-                    } else {
-                        const globalState = readAutopilotState();
-                        const current = globalState.enabled;
-                        const newEnabled = !current;
-                        writeAutopilotState({ enabled: newEnabled, timestamp: Date.now() });
-                    }
+                    // setAutopilotEnabled handles session-level AND global writes atomically,
+                    // and also clears stale session overrides when globally toggling.
+                    setAutopilotEnabled(sessionID, !state.enabled);
+
+                    // Read back from the shared global file (source of truth across processes).
+                    const newEnabled = readAutopilotState().enabled;
                     showToast({
-                        message: (sessionID ? getSessionAutopilotEnabled(sessionID) : readAutopilotState().enabled) ? "Autopilot enabled" : "Autopilot disabled",
-                        variant: (sessionID ? getSessionAutopilotEnabled(sessionID) : readAutopilotState().enabled) ? "warning" : "info",
+                        message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
+                        variant: newEnabled ? "warning" : "info",
                     });
 
                     // If the API supports a commands provider callback, it will read

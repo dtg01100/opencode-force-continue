@@ -82,9 +82,20 @@ export function getAutopilotEnabled(config, sessionID) {
 }
 
 export function setAutopilotEnabled(sessionID, enabled) {
-    setAutopilotEnabledInState(sessionID, enabled);
-    // Also update global file store for TUI and cross-process visibility
+    if (sessionID) {
+        setAutopilotEnabledInState(sessionID, enabled);
+    }
     writeAutopilotState({ enabled, timestamp: Date.now() });
+    if (!sessionID) {
+        // Global toggle: clear any stale session-level overrides so they cannot
+        // shadow the new global value when getAutopilotEnabled checks session first.
+        for (const [sid, meta] of sessionState) {
+            if (Object.prototype.hasOwnProperty.call(meta, "autopilotEnabled")) {
+                delete meta.autopilotEnabled;
+                sessionState.set(sid, meta);
+            }
+        }
+    }
 }
 
 const DEFAULT_AUTOPILOT_MAX_ATTEMPTS = 3;
