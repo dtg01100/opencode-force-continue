@@ -5,3 +5,5 @@ export { createRequestGuidanceTool } from "./requestGuidance.js";
 export { createPauseAutoContinueTool } from "./pauseAutoContinue.js";
 export { createHealthCheckTool } from "./healthCheck.js";
 export { createSetAutopilotTool } from "./setAutopilot.js";
+
+// NOTE: Keep export order stable to avoid subtle side-effects when importing a subset of tools.

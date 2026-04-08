@@ -1,6 +1,6 @@
 import { sessionState } from "../state.js";
 
-export function createSessionCompactingHandler(config) {
+export function createSessionCompactingHandler(config = {}) {
     return async (params = {}, ctx2 = {}) => {
         const sessionID = params?.sessionID;
         if (!sessionID) return;
@@ -15,8 +15,8 @@ export function createSessionCompactingHandler(config) {
                 `Continuation count: ${continuationState}\n` +
                 `Files modified: ${filesModified.join(", ") || "none"}\n` +
                 `Last progress: ${progressReport?.progress ?? "none"}\n` +
-                `If continuation count >= ${config.escalationThreshold}, try a different approach.\n` +
-                `If continuation count >= ${config.maxContinuations}, call completionSignal(status='blocked').\n` +
+                `If continuation count >= ${config.escalationThreshold ?? config.maxContinuations ?? 'N/A'}, try a different approach.\n` +
+                `If continuation count >= ${config.maxContinuations ?? config.escalationThreshold ?? 'N/A'}, call completionSignal(status='blocked').\n` +
                 `</force-continue-state>`
             );
         }

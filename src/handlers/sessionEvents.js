@@ -34,7 +34,7 @@ function getLastAssistantText(messages) {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
         const role = msg.role || msg.info?.role;
-        const parts = msg.parts || msg.info?.parts;
+        const parts = msg.parts || msg.info?.parts || msg.content || msg.info?.content;
         if (role === "assistant" && parts) {
             const textParts = parts.filter(p => p && p.type === "text");
             if (textParts.length > 0) {
@@ -173,14 +173,19 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
 
             const lastMsg = messages[messages.length - 1];
-            const lastMsgRole = lastMsg.role || lastMsg.info?.role;
+            const lastMsgRole = lastMsg?.role || lastMsg?.info?.role;
+            if (!lastMsgRole) {
+                metricsTracker.record(sessionID, "last.msg.missing.role");
+                log("debug", "last message missing role", { sessionID });
+                return;
+            }
             if (lastMsgRole !== "assistant") {
                 metricsTracker.record(sessionID, "last.msg.not.assistant");
                 log("debug", "last message not from assistant", { sessionID, role: lastMsgRole });
                 return;
             }
 
-            const contextText = getLastAssistantText(messages);
+            const contextText = getLastAssistantText(messages || []);
             const prevText = meta.lastAssistantText || null;
             const progress = madeProgress(contextText, prevText);
             const responseHistory = meta.responseHistory || [];
@@ -192,6 +197,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 log("info", "Progress detected, resetting continuation and autopilot attempt counts", { sessionID });
             }
 
+            // increment continuation count after checking for progress reset
             meta.continuationCount = (meta.continuationCount || 0) + 1;
             meta.lastAssistantText = contextText;
             if (contextText) {
@@ -230,6 +236,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                         meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
                         sessionState.set(sessionID, meta);
                         log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: currentAttempts });
+                        return;
                     } else {
                         sessionState.set(sessionID, meta);
                         const prompt = buildAutopilotPrompt(
@@ -291,6 +298,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
     };
 
     const sendPrompt = async (sessionID, text) => {
+        if (!text || typeof text !== 'string') return;
         if (config.nudgeDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, config.nudgeDelayMs));
             if (!sessionState.has(sessionID)) {
@@ -303,10 +311,39 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
         }
-        await client.session.promptAsync({
-            path: { id: sessionID },
-            body: { parts: [{ type: "text", text }] }
-        });
+        try {
+            await client.session.promptAsync({
+                path: { id: sessionID },
+                body: { parts: [{ type: "text", text }] }
+            });
+        } catch (e) {
+            // Record prompt error and also increment session-level error count
+            // immediately. Some error paths may not bubble cleanly to the
+            // outer handler in tests, so incrementing here makes the behavior
+            // deterministic and ensures prompt failures contribute to the
+            // circuit-breaker threshold as tests expect.
+            metricsTracker.record(sessionID, "prompt.error");
+            log("error", "Failed to send prompt", { sessionID, error: e?.message ?? e });
+
+            try {
+                const currentMeta = sessionState.get(sessionID) || {};
+                currentMeta.errorCount = (currentMeta.errorCount || 0) + 1;
+                sessionState.set(sessionID, currentMeta);
+
+                if (currentMeta.errorCount >= config.circuitBreakerThreshold) {
+                    metricsTracker.record(sessionID, "circuit.breaker.trip");
+                    currentMeta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
+                    sessionState.set(sessionID, currentMeta);
+                    log("warn", "Circuit breaker tripped after prompt error", { sessionID, errorCount: currentMeta.errorCount });
+                }
+            } catch (innerErr) {
+                // Don't let error-counting itself throw and mask the original error
+                log("error", "Failed while recording prompt error to session state", { sessionID, error: innerErr?.message ?? innerErr });
+            }
+
+            // Rethrow so outer handler can also observe the failure if needed.
+            throw e;
+        }
     };
 
     return async ({ event }) => {

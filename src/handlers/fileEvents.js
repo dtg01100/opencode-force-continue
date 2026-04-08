@@ -13,7 +13,16 @@ export function createFileEventsHandler(config) {
                 if (filePath.startsWith('./')) {
                     filePath = filePath.slice(2);
                 }
-                meta.filesModified.add(filePath);
+                // Normalize and dedupe: store relative paths without leading ./
+                try {
+                    // avoid adding overly long or binary paths
+                    if (typeof filePath === 'string' && filePath.length > 0 && filePath.length < 4096) {
+                        meta.filesModified.add(filePath);
+                    }
+                } catch (e) {
+                    // defensive: keep handler resilient to Set issues
+                    meta.filesModified = new Set([...meta.filesModified, filePath]);
+                }
             }
             sessionState.set(sessionID, meta);
         }

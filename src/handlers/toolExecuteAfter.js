@@ -2,9 +2,10 @@ import { sessionState } from "../state.js";
 import { metrics } from "../metrics.js";
 
 export function createToolExecuteAfterHandler(config, log) {
-    return async (input) => {
+    return async (input = {}) => {
         const sessionID = input?.sessionID;
         if (!sessionID) return;
+        if (!Array.isArray(config.ignoreTools)) config.ignoreTools = [];
         if (config.ignoreTools.includes(input.tool)) return;
 
         const meta = sessionState.get(sessionID) || {};
@@ -14,7 +15,11 @@ export function createToolExecuteAfterHandler(config, log) {
 
         if (config.enableFileTracking && (input.tool === "edit" || input.tool === "write")) {
             meta.filesModified = meta.filesModified || new Set();
-            if (input.args?.filePath) meta.filesModified.add(input.args.filePath);
+            if (input.args?.filePath && typeof input.args.filePath === 'string') {
+                // normalize path separators
+                const normalized = input.args.filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+                meta.filesModified.add(normalized);
+            }
         }
 
         if (config.enableToolLoopDetection) {

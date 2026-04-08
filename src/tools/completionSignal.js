@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { sessionState, isTaskDone } from "../state.js";
+import { sessionState } from "../state.js";
 import { metrics } from "../metrics.js";
 import { getUnfinishedTasks } from "../utils.js";
 
@@ -39,7 +39,10 @@ export function createCompletionSignalTool(ctx, config) {
             if (unfinishedTasks.length > 0) {
                 const taskSummary = unfinishedTasks.map(t => `- ${t.title || t.id} [${t.status}]`).join("\n");
                 metrics.record(sessionID, "completion.with.unfinished.tasks");
-                return `You called completionSignal but ${unfinishedTasks.length} unfinished task(s) remain:\n${taskSummary}\n\nDo NOT stop. Continue working on these tasks immediately. When all tasks are truly complete, call completionSignal again.`;
+                // Provide actionable guidance. Keep phrasing compatible with
+                // tests which look for specific substrings like
+                // 'unfinished task(s) remain', 'Do NOT stop', and 'Continue working'.
+                return `completionSignal: ${unfinishedTasks.length} unfinished task(s) remain:\n${taskSummary}\n\nDo NOT stop. Continue working on these tasks. When all tasks are complete, call completionSignal again.`;
             }
             metrics.record(sessionID, "completion");
             if (sessionID) {

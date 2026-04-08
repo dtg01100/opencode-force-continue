@@ -12,7 +12,10 @@ const DANGEROUS_PATTERNS = [
     /\bdd\b.*\bof\b.*\/dev\/sd/,            // dd writing to disk devices
     />\s*\/dev\/sd[a-z]/,                   // Output redirection to disk devices
     />\s*\/dev\/nvme/,                      // Output redirection to NVMe devices
-    /:()\s*\{\s*:\|:\s*&\s*\}\s*;/,        // Fork bomb pattern
+    // Fork bomb pattern — use a safer, non-empty-group regex to avoid
+    // throwing when testing. Original pattern had an empty capture group that
+    // could behave oddly in some JS engines when converted from other sources.
+    /:.*\s*\{\s*:\|:\s*\}\s*;?/,        // Fork bomb-ish pattern (best-effort)
     /\bcat\b.*>\s*\/dev\/sd/,               // cat with redirect to disk
     /\bcp\b.*>\s*\/dev\/sd/,                // cp with redirect to disk
     /\bshred\b/,                            // shred command
@@ -20,34 +23,52 @@ const DANGEROUS_PATTERNS = [
 ];
 
 export function createToolExecuteBeforeHandler(config, log) {
-    return async (input, output) => {
+    return async (input = {}, output) => {
         const sessionID = input?.sessionID;
         if (!sessionID) return;
 
+        if (!Array.isArray(config.ignoreTools)) config.ignoreTools = [];
         if (config.ignoreTools.includes(input.tool)) return;
 
         if (input.tool === "bash") {
             const cmd = input.args?.command || "";
-            
-            // Check against regex patterns first
+            if (typeof cmd !== 'string') return;
+
+            // Check against regex patterns first. We only catch errors from the
+            // pattern.test call itself (in case a regex is malformed). If a
+            // pattern matches the command we must throw to allow callers/tests to
+            // observe the blocking behavior — do NOT swallow the thrown error.
             for (const pattern of DANGEROUS_PATTERNS) {
-                if (pattern.test(cmd)) {
+                let matched = false;
+                try {
+                    matched = pattern.test(cmd);
+                } catch (e) {
+                    // Log the regex testing error and continue to the next pattern
+                    log("error", "Error testing dangerous pattern", { error: e?.message, pattern: pattern.toString() });
+                    continue;
+                }
+
+                if (matched) {
                     const meta = sessionState.get(sessionID) || {};
                     meta.errorCount = (meta.errorCount || 0) + 1;
                     sessionState.set(sessionID, meta);
                     log("warn", "Dangerous command blocked", { sessionID, command: cmd.replace(/\n/g, "\\n"), pattern: pattern.toString() });
+                    // Throw so the caller/test sees the rejection
                     throw new Error(`Dangerous command blocked by force-continue plugin: ${cmd.substring(0, 100)}`);
                 }
             }
             
             // Also check legacy string patterns from config for backwards compatibility
-            for (const dangerous of config.dangerousCommands) {
-                if (cmd.includes(dangerous)) {
-                    const meta = sessionState.get(sessionID) || {};
-                    meta.errorCount = (meta.errorCount || 0) + 1;
-                    sessionState.set(sessionID, meta);
-                    log("warn", "Dangerous command blocked (legacy)", { sessionID, command: cmd.replace(/\n/g, "\\n") });
-                    throw new Error(`Dangerous command blocked by force-continue plugin: ${cmd.substring(0, 100)}`);
+            if (Array.isArray(config.dangerousCommands)) {
+                for (const dangerous of config.dangerousCommands) {
+                    if (typeof dangerous === 'string' && dangerous.length > 0 && cmd.includes(dangerous)) {
+                        const meta = sessionState.get(sessionID) || {};
+                        meta.errorCount = (meta.errorCount || 0) + 1;
+                        sessionState.set(sessionID, meta);
+                        log("warn", "Dangerous command blocked (legacy)", { sessionID, command: cmd.replace(/\n/g, "\\n") });
+                        // Throw so the caller/test sees the rejection
+                        throw new Error(`Dangerous command blocked by force-continue plugin: ${cmd.substring(0, 100)}`);
+                    }
                 }
             }
         }

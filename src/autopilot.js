@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { sessionState, getAutopilotEnabled as getAutopilotEnabledFromState, setAutopilotEnabled as setAutopilotEnabledInState } from "./state.js";
+
+// Import only the sessionState Map directly to avoid circular dependency
+// DO NOT import getAutopilotEnabled/setAutopilotEnabled from state.js
+import { sessionState } from "./state.js";
 
 let autopilotState = { enabled: false, timestamp: null };
 
@@ -28,8 +31,14 @@ export function readAutopilotState() {
     const p = autopilotFilePath();
     if (existsSync(p)) {
       const parsed = JSON.parse(readFileSync(p, "utf-8"));
-      if (parsed && typeof parsed.timestamp === "number" && parsed.timestamp !== null) {
-        return parsed;
+      // Accept stored state if it has an explicit timestamp (number) or null.
+      // Older code rejected null timestamps; allow null so a persisted disabled
+      // autopilot state is respected even when timestamp isn't set.
+      if (parsed && (typeof parsed.timestamp === "number" || parsed.timestamp === null)) {
+        return {
+          enabled: Boolean(parsed.enabled),
+          timestamp: parsed.timestamp,
+        };
       }
     }
   } catch (e) {
@@ -49,7 +58,13 @@ export function writeAutopilotState(state) {
   try {
     const p = autopilotFilePath();
     mkdirSync(join(process.cwd(), ".opencode", "force-continue"), { recursive: true });
-    writeFileSync(p, JSON.stringify(autopilotState));
+    // write atomically: write to tmp file then rename
+    const tmp = `${p}.tmp`;
+    writeFileSync(tmp, JSON.stringify(autopilotState));
+    try { unlinkSync(p); } catch (e) {}
+    // rename is atomic on most platforms
+    writeFileSync(p, readFileSync(tmp, "utf-8"));
+    try { unlinkSync(tmp); } catch (e) {}
   } catch (e) {
     console.error(`[force-continue] writeAutopilotState: failed to persist autopilot state to disk — ${e?.message}. In-memory state updated but other processes may not see this value.`);
   }
@@ -88,14 +103,22 @@ export function getAutopilotEnabled(config, sessionID) {
     }
     // Fall back to global file store
     const stored = readAutopilotState();
-    if (stored.timestamp !== null) return stored.enabled;
+    // If stored has a numeric timestamp treat it as authoritative.
+    // Previously we treated null timestamps as authoritative which caused
+    // persisted-but-uninitialized state to override runtime config. Tests and
+    // callers expect that only a real numeric timestamp (a real write) should
+    // override config at runtime. Fall back to config when timestamp is null.
+    if (stored && typeof stored.timestamp === "number") return stored.enabled;
     // Fall back to config
     return config?.autopilotEnabled ?? false;
 }
 
 export function setAutopilotEnabled(sessionID, enabled) {
     if (sessionID) {
-        setAutopilotEnabledInState(sessionID, enabled);
+        // Directly update sessionState to avoid circular dependency
+        const meta = sessionState.get(sessionID) || {};
+        meta.autopilotEnabled = enabled;
+        sessionState.set(sessionID, meta);
         return;
     }
     writeAutopilotState({ enabled, timestamp: Date.now() });

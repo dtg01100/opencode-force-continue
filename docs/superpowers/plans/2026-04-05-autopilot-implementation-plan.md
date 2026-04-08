@@ -1,5 +1,7 @@
 # Autopilot Mode Implementation Plan
 
+NOTE: Implementation approach changed since this plan was drafted. The repository uses a modular "src/" layout (config, tools, autopilot helper, handlers) rather than a single `force-continue.server.js` monolith. The implementation and tests live in `src/` and `__tests__/` respectively. This plan remains as the high-level checklist, but file paths below have been updated to reflect the current code layout.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add autopilot mode that auto-answers `requestGuidance` calls using AI-generated responses instead of waiting for user input.
@@ -10,17 +12,21 @@
 
 ---
 
-## File Map
+## File Map (current code locations)
 
-- **Modify:** `force-continue.server.js` - Add autopilot config options, modify `requestGuidance` tool, add helper function
-- **Modify:** `__tests__/plugin.test.ts` - Add tests for autopilot behavior
+- **Modify / Inspect:** `src/config.js` - autopilot defaults and env parsing
+- **Modify / Inspect:** `src/tools/requestGuidance.js` - requestGuidance tool logic and autopilot flow
+- **Modify / Inspect:** `src/autopilot.js` - prompt builder, read/write autopilot state, helpers
+- **Modify / Inspect:** `__tests__/plugin.test.ts` - tests that cover autopilot behavior
 
 ---
 
 ## Task 1: Add Autopilot Configuration Options
 
+Implementation note: these options are already present in `src/config.js`. Confirm values and env parsing there.
+
 **Files:**
-- Modify: `force-continue.server.js:1-56` (config section)
+- Inspect / Modify: `src/config.js` (config section)
 
 - [ ] **Step 1: Add autopilot to DEFAULT_CONFIG**
 
@@ -59,8 +65,10 @@ git commit -m "feat: add autopilot config options"
 
 ## Task 2: Add buildAutopilotPrompt Helper Function
 
+Implementation note: prompt builder and autopilot state helpers live in `src/autopilot.js`.
+
 **Files:**
-- Modify: `force-continue.server.js` (add after line ~215, before plugin factory)
+- Inspect / Modify: `src/autopilot.js`
 
 - [ ] **Step 1: Add buildAutopilotPrompt function**
 
@@ -90,8 +98,10 @@ git commit -m "feat: add buildAutopilotPrompt helper"
 
 ## Task 3: Modify requestGuidance Tool for Autopilot
 
+Implementation note: requestGuidance autopilot flow is implemented in `src/tools/requestGuidance.js` and integrates with `src/autopilot.js` and `src/state.js`.
+
 **Files:**
-- Modify: `force-continue.server.js:371-388` (requestGuidance tool)
+- Inspect / Modify: `src/tools/requestGuidance.js`
 
 - [ ] **Step 1: Read current requestGuidance implementation**
 
@@ -180,8 +190,10 @@ git commit -m "feat: add autopilot logic to requestGuidance tool"
 
 ## Task 4: Reset Autopilot Attempts on User Message
 
+Implementation note: chat message handler is implemented in `src/handlers/chatMessage.js` / `src/state.js` and already resets session metadata on user messages; confirm autopilotAttempts reset there.
+
 **Files:**
-- Modify: `force-continue.server.js:430-445` (chat.message handler)
+- Inspect / Modify: `src/handlers/chatMessage.js`, `src/state.js`
 
 - [ ] **Step 1: Read current chat.message handler**
 
@@ -225,8 +237,10 @@ git commit -m "feat: reset autopilot attempts on user message"
 
 ## Task 5: Add Autopilot Metrics
 
+Implementation note: metrics are tracked via `src/metrics.js`. Confirm `autopilot.attempt` and `autopilot.fallback` are recorded and surfaced by the metrics tracker.
+
 **Files:**
-- Modify: `force-continue.server.js:109-134` (metrics tracker)
+- Inspect / Modify: `src/metrics.js`
 
 - [ ] **Step 1: Read current metrics structure**
 
@@ -261,8 +275,10 @@ git commit -m "feat: add autopilot metrics tracking"
 
 ## Task 6: Write Autopilot Tests
 
+Implementation note: tests covering autopilot behavior exist in `__tests__/plugin.test.ts` — run the test suite to validate behavior.
+
 **Files:**
-- Modify: `__tests__/plugin.test.ts`
+- Inspect / Modify: `__tests__/plugin.test.ts`
 
 - [ ] **Step 1: Read existing test structure**
 
@@ -392,8 +408,10 @@ git commit -m "test: add autopilot mode tests"
 
 ## Task 7: Update README Documentation
 
+Implementation note: README already documents autopilot env vars and tools reference. If additional examples are needed, edit `README.md`.
+
 **Files:**
-- Modify: `README.md`
+- Modify: `README.md` (if updates required)
 
 - [ ] **Step 1: Add autopilot configuration to environment variables table**
 

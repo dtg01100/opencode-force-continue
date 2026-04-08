@@ -64,12 +64,18 @@ export function startPeriodicCleanup(intervalMs = 60 * 60 * 1000, ttlMs) {
     if (cleanupInterval) {
         clearInterval(cleanupInterval);
     }
+    // Ensure intervalMs is a positive number
+    const effectiveInterval = typeof intervalMs === "number" && intervalMs > 0 ? intervalMs : 60 * 60 * 1000;
     cleanupInterval = setInterval(() => {
-        const cleaned = cleanupExpiredSessions();
-        if (cleaned > 0) {
-            console.log(`force-continue: Cleaned up ${cleaned} expired session(s)`);
+        try {
+            const cleaned = cleanupExpiredSessions();
+            if (cleaned > 0) {
+                console.log(`force-continue: Cleaned up ${cleaned} expired session(s)`);
+            }
+        } catch (e) {
+            console.error(`[force-continue] startPeriodicCleanup: cleanup job failed: ${e?.message ?? e}`);
         }
-    }, intervalMs);
+    }, effectiveInterval);
 }
 
 /**

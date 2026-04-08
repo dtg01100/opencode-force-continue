@@ -24,6 +24,7 @@ export const DEFAULT_CONFIG = {
 };
 
 function safeParseInt(value, fallback) {
+    if (value === undefined || value === null) return fallback;
     const n = parseInt(value, 10);
     return Number.isFinite(n) && n >= 0 ? n : fallback;
 }

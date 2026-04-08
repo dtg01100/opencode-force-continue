@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 
-export function createValidateTool(client, config, logger) {
+export function createValidateTool(client, config = {}, logger = console) {
+    // Provide safe defaults and defensive checks to avoid throwing during capability probes
     return tool({
         description: "Validate plugin wiring. mode='dry' for capability checks, mode='probe' to optionally send a test prompt to a sessionID.",
         args: {
@@ -34,7 +35,8 @@ export function createValidateTool(client, config, logger) {
                         result.probe = { ok: false, error: 'promptAsync not available on client.session' };
                     } else {
                         try {
-                            await client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: 'text', text: promptText || 'Plugin validation probe' }] } });
+                            // Guard against misbehaving promptAsync implementations
+                            await Promise.resolve(client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: 'text', text: promptText || 'Plugin validation probe' }] } }));
                             result.probe = { ok: true };
                         } catch (e) {
                             result.ok = false;

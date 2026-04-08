@@ -1,0 +1,4 @@
+2026-04-07T17:44:37.831945Z  INFO ralph: Spawning subprocess for TUI mode child_args=["-c", "ralph.yml", "run", "--rpc"]
+2026-04-07T17:44:37.833087Z  INFO ralph: TUI subprocess stderr redirected to log file log_file=/var/mnt/Disk2/projects/opencode-force-continue/.ralph/diagnostics/logs/ralph-2026-04-07T13-44-37-832-110928.log
+2026-04-07T17:44:37.836047Z  INFO ralph: TUI running in subprocess RPC mode
+2026-04-07T17:45:18.794436Z  INFO ralph_tui::app: Ctrl+C detected, signaling abort

@@ -3,26 +3,44 @@ import { join } from "path";
 
 export function createFileStore(baseDir) {
     const storeDir = join(baseDir, ".opencode", "force-continue-store");
-    try { mkdirSync(storeDir, { recursive: true }); } catch {}
+    try { mkdirSync(storeDir, { recursive: true }); } catch (e) {
+        console.warn(`[force-continue] createFileStore: failed to create store dir ${storeDir}: ${e?.message ?? e}`);
+    }
 
     return {
         get(key) {
             const p = join(storeDir, `${key}.json`);
             if (!existsSync(p)) return undefined;
-            try { return JSON.parse(readFileSync(p, "utf-8")); } catch { return undefined; }
+            try {
+                return JSON.parse(readFileSync(p, "utf-8"));
+            } catch (e) {
+                console.warn(`[force-continue] fileStore.get: failed to read/parse ${p}: ${e?.message ?? e}`);
+                return undefined;
+            }
         },
         set(key, value) {
             const p = join(storeDir, `${key}.json`);
-            try { writeFileSync(p, JSON.stringify(value)); } catch {}
+            try {
+                writeFileSync(p, JSON.stringify(value));
+            } catch (e) {
+                console.error(`[force-continue] fileStore.set: failed to write ${p}: ${e?.message ?? e}`);
+            }
         },
         delete(key) {
             const p = join(storeDir, `${key}.json`);
-            try { if (existsSync(p)) unlinkSync(p); } catch {}
+            try {
+                if (existsSync(p)) unlinkSync(p);
+            } catch (e) {
+                console.warn(`[force-continue] fileStore.delete: failed to delete ${p}: ${e?.message ?? e}`);
+            }
         },
         keys() {
             try {
                 return readdirSync(storeDir).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5));
-            } catch { return []; }
+            } catch (e) {
+                console.warn(`[force-continue] fileStore.keys: failed to list keys in ${storeDir}: ${e?.message ?? e}`);
+                return [];
+            }
         },
     };
 }

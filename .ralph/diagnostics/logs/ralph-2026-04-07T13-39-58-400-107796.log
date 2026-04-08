@@ -1,0 +1,5 @@
+2026-04-07T17:39:58.402223Z  INFO ralph: Creating scratchpad directory: /var/mnt/Disk2/projects/opencode-force-continue/.ralph/agent
+2026-04-07T17:39:58.402793Z  INFO ralph: Spawning subprocess for TUI mode child_args=["-c", "ralph.yml", "run", "--rpc", "-p", "do a code and documentation review pass, resolve any issues discovered. task is only finished when we cannot find anything to fix"]
+2026-04-07T17:39:58.403249Z  INFO ralph: TUI subprocess stderr redirected to log file log_file=/var/mnt/Disk2/projects/opencode-force-continue/.ralph/diagnostics/logs/ralph-2026-04-07T13-39-58-403-107796.log
+2026-04-07T17:39:58.404568Z  INFO ralph: TUI running in subprocess RPC mode
+2026-04-07T17:41:33.127969Z  INFO ralph_tui::app: Ctrl+C detected, signaling abort

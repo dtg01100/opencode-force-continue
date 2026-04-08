@@ -1,0 +1,10 @@
+[2m2026-04-07T17:44:37.900789Z[0m [33m WARN[0m [2mralph::loop_runner[0m[2m:[0m Interactive mode requested but stdout is not a TTY, falling back to autonomous
+[2m2026-04-07T17:44:37.903781Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Memory injection check: enabled=true, inject=Auto, workspace_root="/var/mnt/Disk2/projects/opencode-force-continue"
+[2m2026-04-07T17:44:37.903882Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Looking for memories at: "/var/mnt/Disk2/projects/opencode-force-continue/.ralph/agent/memories.md" (exists: false)
+[2m2026-04-07T17:44:37.903930Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Successfully loaded 0 memories from store
+[2m2026-04-07T17:44:37.903953Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Memory store is empty - no memories to inject
+[2m2026-04-07T17:45:10.430844Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Memory injection check: enabled=true, inject=Auto, workspace_root="/var/mnt/Disk2/projects/opencode-force-continue"
+[2m2026-04-07T17:45:10.430896Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Looking for memories at: "/var/mnt/Disk2/projects/opencode-force-continue/.ralph/agent/memories.md" (exists: false)
+[2m2026-04-07T17:45:10.430916Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Successfully loaded 0 memories from store
+[2m2026-04-07T17:45:10.430926Z[0m [32m INFO[0m [2mralph_core::event_loop[0m[2m:[0m Memory store is empty - no memories to inject
+[2m2026-04-07T17:45:18.795078Z[0m [33m WARN[0m [2mralph::rpc_stdin[0m[2m:[0m Failed to write to stdout, stopping emitter

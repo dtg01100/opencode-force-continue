@@ -1,23 +1,28 @@
 import { sessionState } from "../state.js";
 
 export function createChatMessageHandler() {
-    return async ({ sessionID }) => {
+    return async ({ sessionID } = {}) => {
         if (!sessionID || typeof sessionID !== "string") return;
         try {
             const meta = sessionState.get(sessionID) || {};
+            const completionReached = meta.autoContinuePaused?.reason === 'completed';
             meta.lastSeen = Date.now();
             meta.continuationCount = 0;
             meta.lastAssistantText = null;
             meta.responseHistory = [];
             meta.toolCallHistory = [];
             meta.errorCount = 0;
-            meta.autoContinuePaused = null;
             meta.awaitingGuidance = null;
             meta.toolLoopDetected = false;
             meta.autopilotAttempts = 0;
+            if (!completionReached) {
+                meta.autoContinuePaused = null;
+            }
             sessionState.set(sessionID, meta);
         } catch (e) {
-            console.warn(`[force-continue] chatMessage handler: failed to update session state — ${e?.message}`);
+            try {
+                console.warn(`[force-continue] chatMessage handler: failed to update session state — ${e?.message}`);
+            } catch (ignored) {}
         }
     };
 }

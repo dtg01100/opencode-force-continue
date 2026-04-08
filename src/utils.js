@@ -33,15 +33,20 @@ export async function getUnfinishedTasks(ctx, sessionID, logger = null) {
         if (typeof fn !== "function") continue;
         try {
             const result = await fn(sessionID);
-            const tasks = Array.isArray(result) 
-                ? result 
+            const tasks = Array.isArray(result)
+                ? result
                 : (result && Array.isArray(result.data) ? result.data : []);
             if (tasks.length > 0) {
                 return tasks.filter(t => t && t.status && !isTaskDone(t.status));
             }
         } catch (e) {
             if (logger) {
-                logger("error", "Failed to query tasks", { error: e?.stack ?? e });
+                try {
+                    logger("error", "Failed to query tasks", { error: e?.stack ?? e });
+                } catch (logErr) {
+                    // If logger fails, fallback to console to avoid silent failures
+                    try { console.error("force-continue: Failed to log task query error", logErr); } catch (ee) {}
+                }
             }
         }
     }

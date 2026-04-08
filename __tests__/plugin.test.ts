@@ -205,6 +205,27 @@ describe('ContinuePlugin', () => {
       expect(await getPaused('test-session-3')).not.toBeNull();
     });
 
+    it('should preserve completed sessions after a chat message', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'completed-session' } } } });
+      await plugin.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            sessionID: 'completed-session',
+            part: { type: 'tool', tool: 'completionSignal', sessionID: 'completed-session', state: { status: 'completed' } }
+          }
+        }
+      });
+
+      expect(await getPaused('completed-session')).not.toBeNull();
+      await plugin['chat.message']({ sessionID: 'completed-session' });
+      expect(await getPaused('completed-session')).not.toBeNull();
+    });
+
     it('should mark session complete when part.sessionID resolves session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
@@ -381,15 +402,15 @@ describe('ContinuePlugin', () => {
       });
     });
 
-    it('should send break-out prompt after 3 consecutive continuations', async () => {
+    it('should send loop-break prompt when assistant response repeats', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'loop-session' });
-      mockClient.session.messages.mockResolvedValue({
-        data: [{ role: 'assistant', content: [{ type: 'text', text: 'Stuck' }] }]
-      });
+      mockClient.session.messages
+        .mockResolvedValueOnce({ data: [{ role: 'assistant', content: [{ type: 'text', text: 'Stuck' }] }] })
+        .mockResolvedValueOnce({ data: [{ role: 'assistant', content: [{ type: 'text', text: 'Stuck' }] }] });
 
       // 1st continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
@@ -397,17 +418,11 @@ describe('ContinuePlugin', () => {
         body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
       }));
 
-      // 2nd continue
-      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
-      expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({
-        body: expect.objectContaining({ parts: [{ type: 'text', text: expect.stringContaining('Continue working') }] })
-      }));
-
-      // 3rd continue — escalation threshold reached, should show "previous approach not working"
+      // 2nd idle should trigger loop-break rather than a normal continue
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'loop-session' } } });
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
-      expect(lastCall.body.parts[0].text).toContain('current approach is not working');
-      expect(lastCall.body.parts[0].text).toContain('fundamentally different strategy');
+      expect(lastCall.body.parts[0].text).toContain('LOOP DETECTED');
+      expect(lastCall.body.parts[0].text).toContain('Do NOT repeat your previous approach');
     });
 
     it('should escalate further at 4 continuations', async () => {

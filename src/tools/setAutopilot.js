@@ -12,10 +12,19 @@ export function createSetAutopilotTool(config, log) {
         execute: async ({ enabled, sessionID }, toolCtx) => {
             const effectiveSessionID = sessionID || toolCtx?.sessionID;
             if (effectiveSessionID) {
+                // Set per-session override AND also update the global autopilot
+                // state to match tests that expect the tool to toggle both.
                 const meta = sessionState.get(effectiveSessionID) || {};
                 meta.autopilotEnabled = enabled;
                 sessionState.set(effectiveSessionID, meta);
-                writeAutopilotState({ enabled, timestamp: Date.now() });
+                // Also write global state so callers that read global state will
+                // observe the change. This keeps behavior consistent with the
+                // existing test-suite expectations.
+                try {
+                    writeAutopilotState({ enabled, timestamp: Date.now() });
+                } catch (e) {
+                    log("warn", "Failed to write global autopilot state", { error: e?.message });
+                }
                 log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool for session ${effectiveSessionID}`);
                 return `Autopilot ${enabled ? "enabled" : "disabled"} for session ${effectiveSessionID}.`;
             } else {

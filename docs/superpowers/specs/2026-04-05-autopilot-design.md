@@ -98,7 +98,11 @@ requestGuidance: tool({
             log("info", "Guidance requested", { sessionID, question });
         }
 
-        if (config.autopilotEnabled) {
+                 // Implementation note: the repository implements autopilot helpers in `src/autopilot.js` and
+                 // requestGuidance logic in `src/tools/requestGuidance.js`. The code below is the high-level
+                 // algorithm; consult `src/` for the exact implementation and test coverage.
+
+                 if (config.autopilotEnabled) {
             const meta = sessionState.get(sessionID) || {};
             
             // Check if we've exceeded max autopilot attempts
