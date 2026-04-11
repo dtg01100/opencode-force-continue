@@ -221,6 +221,34 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             const aiAskedQuestion = containsQuestion(contextText);
             const autopilotEnabled = getAutopilotEnabled(config, sessionID);
 
+            // Autopilot: resolve pending guidance autonomously if present
+            if (autopilotEnabled && meta.awaitingGuidance && !aiAskedQuestion) {
+                const pending = meta.awaitingGuidance;
+                const currentAttempts = (meta.autopilotAttempts || 0) + 1;
+                const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
+
+                if (currentAttempts > autopilotMaxAttempts) {
+                    log("info", "Autopilot max guidance attempts reached, pausing", { sessionID });
+                    metricsTracker.record(sessionID, "autopilot.fallback.guidance");
+                    meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
+                    sessionState.set(sessionID, meta);
+                    return;
+                }
+
+                meta.autopilotAttempts = currentAttempts;
+                sessionState.set(sessionID, meta);
+
+                const prompt = buildAutopilotPrompt(
+                    pending.question,
+                    pending.context,
+                    pending.options
+                );
+                metricsTracker.record(sessionID, "autopilot.guidance.resolution");
+                log("info", "Autopilot resolving pending guidance", { sessionID, question: pending.question });
+                await sendPrompt(sessionID, prompt);
+                return;
+            }
+
             if (aiAskedQuestion) {
                 if (autopilotEnabled) {
                     // Autopilot: AI asked a question, auto-answer it

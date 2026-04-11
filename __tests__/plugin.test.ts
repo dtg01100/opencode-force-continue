@@ -1428,6 +1428,47 @@ describe('autopilot', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'reset-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
     });
+
+  it('should resolve pending guidance autonomously on idle when requestGuidance prompt failed', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    mockClient.session.promptAsync = vi.fn().mockRejectedValue(new Error('Network error'));
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'pending-guidance-session' } } } });
+
+    // requestGuidance fails but sets awaitingGuidance
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Which approach should I use?' },
+      { sessionID: 'pending-guidance-session' } as any
+    );
+
+    // Verify awaitingGuidance is set
+    const { readState } = await import('../force-continue.server.js');
+    expect(readState().sessions['pending-guidance-session'].awaitingGuidance).toBeDefined();
+
+    // Reset mock to track idle handler's prompt
+    mockClient.session.promptAsync = vi.fn().mockResolvedValue({});
+    mockClient.session.messages.mockResolvedValue({
+      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working...' }] }]
+    });
+
+    // Idle should resolve pending guidance autonomously
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pending-guidance-session' } } });
+
+    expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
+      path: { id: 'pending-guidance-session' },
+      body: { parts: [{ type: 'text', text: expect.stringContaining('AUTONOMOUS DECISION REQUIRED') }] }
+    });
+  });
   });
 
   describe('pauseAutoContinue tool', () => {
