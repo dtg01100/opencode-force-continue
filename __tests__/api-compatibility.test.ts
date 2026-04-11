@@ -191,11 +191,25 @@ describe('OpenCode API compatibility', () => {
       expect(serverModule.ContinuePlugin).toBe(serverModule.default.server);
     });
 
-    it('default export should expose tui for TUI loading', async () => {
+    it('server module should not export tui (v1 plugin spec compliance)', async () => {
       const serverModule = await import('../force-continue.server.js');
 
-      expect(serverModule.default).toHaveProperty('tui');
-      expect(typeof serverModule.default.tui).toBe('function');
+      // v1 spec: server and tui are separate entrypoints
+      expect(serverModule.default).not.toHaveProperty('tui');
+    });
+
+    it('tui module should be loadable via ./tui export', async () => {
+      const tuiModule = await import('../force-continue.tui.js');
+
+      expect(tuiModule.default).toHaveProperty('tui');
+      expect(typeof tuiModule.default.tui).toBe('function');
+    });
+
+    it('tui module should not export server (v1 plugin spec compliance)', async () => {
+      const tuiModule = await import('../force-continue.tui.js');
+
+      // v1 spec: server and tui are separate entrypoints
+      expect(tuiModule.default).not.toHaveProperty('server');
     });
 
     it('should not keep a Node process alive on import alone', () => {
