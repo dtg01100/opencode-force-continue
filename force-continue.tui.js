@@ -4,7 +4,6 @@ import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
 export const id = "force-continue";
 
 let disposeCommands = [];
-let providerRegistered = false;
 
 export const tui = async (api, options, meta) => {
     // Cleanup previous registrations
@@ -12,7 +11,6 @@ export const tui = async (api, options, meta) => {
         if (typeof dispose === "function") dispose();
     }
     disposeCommands = [];
-    providerRegistered = false;
 
     const showToast = (props) => {
         if (typeof api.ui?.toast === "function") {
@@ -60,16 +58,12 @@ export const tui = async (api, options, meta) => {
                         variant: newEnabled ? "warning" : "info",
                     });
 
-                    if (!providerRegistered) {
-                        try {
-                            for (const dispose of disposeCommands) {
-                                if (typeof dispose === "function") dispose();
-                            }
-                        } finally {
-                            disposeCommands = [];
-                            registerCommands(getCommands);
-                        }
+                    // Re-register commands to update the command list with new state
+                    for (const dispose of disposeCommands) {
+                        if (typeof dispose === "function") dispose();
                     }
+                    disposeCommands = [];
+                    registerCommands(getCommands);
                 },
 
             },
@@ -83,10 +77,8 @@ export const tui = async (api, options, meta) => {
 
         try {
             const dispose = api.command.register(commandsProvider);
-            providerRegistered = true;
             if (typeof dispose === "function") disposeCommands.push(dispose);
         } catch (error) {
-            providerRegistered = false;
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
                 const dispose = api.command.register(commands);
