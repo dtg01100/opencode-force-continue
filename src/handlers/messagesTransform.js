@@ -26,7 +26,7 @@ export function createMessagesTransformHandler() {
                 // the phrase 'COMPLETION ALREADY REACHED'. The message is still
                 // a polite system note but includes the exact test-friendly
                 // substring to avoid brittle assertions.
-                text: "COMPLETION ALREADY REACHED: completionSignal has been called for this session. Do not generate further assistant outputs or call tools for this session.",
+                text: "COMPLETION ALREADY REACHED: completionSignal was called for this session. To continue, send a message — the session has been reset and nudges will resume.",
             }],
         });
     };
