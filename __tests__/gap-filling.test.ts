@@ -545,14 +545,14 @@ describe('messagesTransform early return paths', () => {
     // Set up session state without autoContinuePaused
     await plugin['chat.message']({ sessionID: 'no-pause-msg-session' });
 
-    const messages: any[] = [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }];
-    await plugin['experimental.chat.messages.transform']({ sessionID: 'no-pause-msg-session' }, { messages });
+    const messages: any[] = [{ info: { sessionID: 'no-pause-msg-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({}, { messages });
 
     expect(messages.length).toBe(1);
-    expect(messages[0].role).toBe('user');
+    expect(messages[0].info.role).toBe('user');
   });
 
-  it('should not modify messages when sessionID is missing', async () => {
+  it('should not modify messages when sessionID is missing from messages', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin({ client: mockClient });
@@ -570,7 +570,7 @@ describe('messagesTransform early return paths', () => {
 
     // Should not throw — messages is undefined
     await expect(
-      plugin['experimental.chat.messages.transform']({ sessionID: 'some-session' }, {})
+      plugin['experimental.chat.messages.transform']({}, {})
     ).resolves.not.toThrow();
   });
 
@@ -580,11 +580,11 @@ describe('messagesTransform early return paths', () => {
     const plugin = await createPlugin({ client: mockClient });
 
     await expect(
-      plugin['experimental.chat.messages.transform']({ sessionID: 'some-session' }, { messages: null })
+      plugin['experimental.chat.messages.transform']({}, { messages: null })
     ).resolves.not.toThrow();
 
     await expect(
-      plugin['experimental.chat.messages.transform']({ sessionID: 'some-session' }, { messages: 'not array' })
+      plugin['experimental.chat.messages.transform']({}, { messages: 'not array' })
     ).resolves.not.toThrow();
   });
 });
@@ -874,8 +874,8 @@ describe('tool.execute.before edge cases', () => {
 
     // Non-bash tool — dangerous content should pass through
     await expect(plugin['tool.execute.before'](
-      { sessionID: 's1', tool: 'exec', args: { command: 'rm -rf /' } },
-      {}
+      { sessionID: 's1', tool: 'exec', callID: 'c1' },
+      { args: { command: 'rm -rf /' } }
     )).resolves.not.toThrow();
   });
 
@@ -885,8 +885,8 @@ describe('tool.execute.before edge cases', () => {
     const plugin = await createPlugin({ client: mockClient });
 
     await expect(plugin['tool.execute.before'](
-      { sessionID: 's1', tool: 'bash', args: { command: '' } },
-      {}
+      { sessionID: 's1', tool: 'bash', callID: 'c2' },
+      { args: { command: '' } }
     )).resolves.not.toThrow();
   });
 });
@@ -954,18 +954,20 @@ describe('file.edited event edge cases', () => {
     };
   });
 
-  it('should handle file.edited event without filePath', async () => {
+  it('should handle file.edited event without filePath (no-op since SDK event lacks sessionID)', async () => {
     const { createContinuePlugin, readState } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin({ client: mockClient });
 
     await plugin['chat.message']({ sessionID: 'no-filepath-event-session' });
+    // SDK EventFileEdited only has { file: string } — no sessionID, so this is a no-op
     await plugin.event({
-      event: { type: 'file.edited', properties: { sessionID: 'no-filepath-event-session' } }
+      event: { type: 'file.edited', properties: { file: 'src/main.ts' } }
     });
 
     const state = readState();
-    expect(state.sessions['no-filepath-event-session'].filesModified).toEqual([]);
+    // filesModified remains unset; file tracking happens via tool.execute.after
+    expect(state.sessions['no-filepath-event-session']?.filesModified).toBeUndefined();
   });
 
   it('should skip file.edited when enableFileTracking is false', async () => {
@@ -974,12 +976,13 @@ describe('file.edited event edge cases', () => {
     const plugin = await createPlugin({ client: mockClient });
 
     await plugin['chat.message']({ sessionID: 'no-file-tracking-session' });
+    // No-op regardless of config, since SDK event lacks sessionID
     await plugin.event({
-      event: { type: 'file.edited', properties: { sessionID: 'no-file-tracking-session', filePath: 'x.ts' } }
+      event: { type: 'file.edited', properties: { file: 'x.ts' } }
     });
 
     const state = readState();
-    expect(state.sessions['no-file-tracking-session'].filesModified).toBeUndefined();
+    expect(state.sessions['no-file-tracking-session']?.filesModified).toBeUndefined();
   });
 });
 

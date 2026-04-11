@@ -3,6 +3,11 @@
   "version": "1.0.2",
   "type": "module",
   "main": "force-continue.server.js",
+  "files": [
+    "src/",
+    "force-continue.server.js",
+    "force-continue.tui.js"
+  ],
   "exports": {
     ".": {
       "import": "./force-continue.server.js"

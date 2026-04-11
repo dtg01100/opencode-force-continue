@@ -389,31 +389,6 @@ describe('TUI onSelect concurrency', () => {
     expect(updatedCommands[0].title).toBe('Disable Autopilot');
   });
 
-  it('handles enable→disable→enable in rapid succession', async () => {
-    const SESSION_ID = 'rapid-1';
-    const mockApi: any = {
-      command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
-      },
-      ui: { toast: vi.fn() },
-      route: {
-        current: { name: 'session', params: { sessionID: SESSION_ID } },
-      },
-    };
-
-    await tui(mockApi);
-    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
-
-    mockApi._getCommands()[0].onSelect();
-    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
-
-    mockApi._getCommands()[0].onSelect();
-    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
-
-    mockApi._getCommands()[0].onSelect();
-    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
-  });
-
   it('rapid toggles do not cause state corruption', async () => {
     const SESSION_ID = 'rapid-2';
     const mockApi: any = {

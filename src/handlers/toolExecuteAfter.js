@@ -27,7 +27,7 @@ export function createToolExecuteAfterHandler(config, log) {
             if (history.length >= 4) {
                 const recent = history.slice(-4);
                 const allSame = recent.every(t => t.tool === recent[0].tool && JSON.stringify(t.args) === JSON.stringify(recent[0].args));
-                if (allSame) {
+                if (allSame && !meta.toolLoopDetected) {
                     metrics.record(sessionID, "tool.loop.detected");
                     meta.toolLoopDetected = true;
                     log("warn", "Tool call loop detected", { sessionID, tool: recent[0].tool });

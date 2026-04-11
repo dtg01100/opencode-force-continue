@@ -1,8 +1,18 @@
 import { pathToFileURL } from 'url';
 import { existsSync } from 'fs';
+import { readFileSync } from 'fs';
 
 const cwd = process.cwd();
-const cachedBase = `${process.env.HOME}/.cache/opencode/packages/force-continue@git+https:/github.com/dtg01100/opencode-force-continue.git/node_modules/force-continue`;
+
+// Derive cached base path from package.json or fall back to local paths
+let cachedBase = null;
+try {
+  const pkg = JSON.parse(readFileSync(`${cwd}/package.json`, 'utf-8'));
+  const pkgName = pkg.name || 'force-continue';
+  cachedBase = `${process.env.HOME}/.cache/opencode/packages/${pkgName}`;
+} catch {
+  cachedBase = `${process.env.HOME}/.cache/opencode/packages/force-continue`;
+}
 
 const targets = [
   { name: 'local.server', path: `${cwd}/force-continue.server.js` },

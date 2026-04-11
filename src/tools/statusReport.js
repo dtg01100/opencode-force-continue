@@ -18,7 +18,8 @@ export function createStatusReportTool(config, log) {
                 sessionState.set(sessionID, meta);
                 log("info", "Progress reported", { sessionID, progress });
             }
-            let response = `Progress recorded: ${progress}`;
+            const progressStr = typeof progress === 'string' ? progress : String(progress);
+            let response = `Progress recorded: ${progressStr}`;
             if (blockers) response += `\nBlockers noted: ${blockers}`;
             response += "\nContinuing work — no auto-continue prompts will be sent until next idle.";
             return response;

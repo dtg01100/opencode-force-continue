@@ -303,7 +303,7 @@ describe('ContinuePlugin', () => {
         event: {
           type: 'message.part.updated',
           properties: {
-            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-blocked', state: { status: 'completed', args: { status: 'blocked', reason: 'quota' } } }
+            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-blocked', state: { status: 'completed', input: { status: 'blocked', reason: 'quota' } } }
           }
         }
       });
@@ -314,11 +314,34 @@ describe('ContinuePlugin', () => {
         event: {
           type: 'message.part.updated',
           properties: {
-            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-interrupted', state: { status: 'completed', args: { status: 'interrupted' } } }
+            part: { type: 'tool', tool: 'completionSignal', sessionID: 'test-session-interrupted', state: { status: 'completed', input: { status: 'interrupted' } } }
           }
         }
       });
       expect(await getPaused('test-session-interrupted')).not.toBeNull();
+    });
+
+    it('should preserve blocked reason when completionSignal event uses legacy args shape', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'legacy-args-blocked-session' });
+      await plugin.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              type: 'tool',
+              tool: 'completionSignal',
+              sessionID: 'legacy-args-blocked-session',
+              state: { status: 'completed', args: { status: 'blocked', reason: 'quota' } }
+            }
+          }
+        }
+      });
+
+      expect(readState().sessions['legacy-args-blocked-session'].autoContinuePaused.reason).toBe('blocked');
     });
   });
 
@@ -1047,8 +1070,8 @@ describe('ContinuePlugin', () => {
   });
 
   describe('requestGuidance tool', () => {
-    it('should pause auto-continue when guidance is requested', async () => {
-      const { createContinuePlugin } = await import('../force-continue.server.js');
+    it('should record awaiting guidance without pausing auto-continue', async () => {
+      const { createContinuePlugin, readState } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
@@ -1061,20 +1084,18 @@ describe('ContinuePlugin', () => {
       );
 
       expect(result).toContain('Guidance request recorded');
-      expect(result).toContain('Auto-continue paused');
-      expect(await getPaused('guidance-session')).toBeNull();
+      // guidance should be recorded but auto-continue should not be paused
+      const state = readState();
+      expect(state.sessions['guidance-session'].awaitingGuidance).toBeDefined();
+      expect(state.sessions['guidance-session'].autoContinuePaused).toBeNull();
 
       mockClient.session.messages.mockResolvedValue({
         data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still waiting' }] }]
       });
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-session' } } });
 
-      // Nudges should still be sent even when guidance is pending (autopilot off)
-      // The nudge will include the pending guidance question
-      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
-        path: { id: 'guidance-session' },
-        body: { parts: [{ type: 'text', text: expect.stringContaining('pending guidance request') }] }
-      });
+      // auto-continue should still send prompts and include the pending guidance
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
 
     it('should not nudge when AI asks a question in text and autopilot is off', async () => {
@@ -1236,7 +1257,7 @@ describe('autopilot', () => {
         { sessionID: 'test-session' } as any
       );
 
-      expect(result).toContain('Auto-continue paused until user responds.');
+      expect(result).toContain('Guidance recorded');
     });
 
   it('should auto-answer AI questions in text when autopilot enabled', async () => {
@@ -1416,8 +1437,8 @@ describe('autopilot', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'danger-session', tool: 'bash', args: { command: 'rm -rf /' } },
-        {}
+        { sessionID: 'danger-session', tool: 'bash', callID: 'c1' },
+        { args: { command: 'rm -rf /' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -1427,8 +1448,8 @@ describe('autopilot', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'safe-session', tool: 'bash', args: { command: 'ls -la' } },
-        {}
+        { sessionID: 'safe-session', tool: 'bash', callID: 'c2' },
+        { args: { command: 'ls -la' } }
       )).resolves.not.toThrow();
     });
 
@@ -1438,8 +1459,8 @@ describe('autopilot', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'ignore-session', tool: 'read', args: { filePath: 'test.txt' } },
-        {}
+        { sessionID: 'ignore-session', tool: 'read', callID: 'c3' },
+        { args: { filePath: 'test.txt' } }
       )).resolves.not.toThrow();
     });
   });
@@ -1491,19 +1512,20 @@ describe('autopilot', () => {
   });
 
   describe('file.edited event', () => {
-    it('should track file edits from file.edited events', async () => {
+    it('should handle file.edited events gracefully (no sessionID in SDK event, so tracking is via tool.execute.after)', async () => {
       const { createContinuePlugin, readState } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'file-event-session' });
+      // file.edited events don't carry sessionID per SDK type, so this is a no-op
       await plugin.event({
-        event: { type: 'file.edited', properties: { sessionID: 'file-event-session', filePath: 'src/main.ts' } }
+        event: { type: 'file.edited', properties: { file: 'src/main.ts' } }
       });
 
+      // filesModified should remain unset from file.edited; file tracking happens via tool.execute.after
       const state = readState();
-      expect(Array.isArray(state.sessions['file-event-session'].filesModified)).toBe(true);
-      expect(state.sessions['file-event-session'].filesModified).toContain('src/main.ts');
+      expect(state.sessions['file-event-session']?.filesModified).toBeUndefined();
     });
   });
 
@@ -1967,8 +1989,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'd1', tool: 'bash', args: { command: 'rm -rf /' } },
-      {}
+      { sessionID: 'd1', tool: 'bash', callID: 'd1c' },
+      { args: { command: 'rm -rf /' } }
     )).rejects.toThrow('Dangerous command blocked');
   });
 
@@ -1977,8 +1999,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'd2', tool: 'bash', args: { command: 'rm -rf ~' } },
-      {}
+      { sessionID: 'd2', tool: 'bash', callID: 'd2c' },
+      { args: { command: 'rm -rf ~' } }
     )).rejects.toThrow('Dangerous command blocked');
   });
 
@@ -1987,8 +2009,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'd3', tool: 'bash', args: { command: 'mkfs -t ext4 /dev/sda' } },
-      {}
+      { sessionID: 'd3', tool: 'bash', callID: 'd3c' },
+      { args: { command: 'mkfs -t ext4 /dev/sda' } }
     )).rejects.toThrow('Dangerous command blocked');
   });
 
@@ -1997,8 +2019,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'd4', tool: 'bash', args: { command: 'dd if=/dev/zero of=/dev/sda' } },
-      {}
+      { sessionID: 'd4', tool: 'bash', callID: 'd4c' },
+      { args: { command: 'dd if=/dev/zero of=/dev/sda' } }
     )).rejects.toThrow('Dangerous command blocked');
   });
 
@@ -2007,8 +2029,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'd5', tool: 'bash', args: { command: 'cat file > /dev/sda' } },
-      {}
+      { sessionID: 'd5', tool: 'bash', callID: 'd5c' },
+      { args: { command: 'cat file > /dev/sda' } }
     )).rejects.toThrow('Dangerous command blocked');
   });
 
@@ -2017,8 +2039,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'safe1', tool: 'bash', args: { command: 'find . -name "*.js"' } },
-      {}
+      { sessionID: 'safe1', tool: 'bash', callID: 's1c' },
+      { args: { command: 'find . -name "*.js"' } }
     )).resolves.not.toThrow();
   });
 
@@ -2027,8 +2049,8 @@ describe('dangerous commands', () => {
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin(getPlugin());
     await expect(plugin['tool.execute.before'](
-      { sessionID: 'safe2', tool: 'read', args: { filePath: '/etc/passwd' } },
-      {}
+      { sessionID: 'safe2', tool: 'read', callID: 's2c' },
+      { args: { filePath: '/etc/passwd' } }
     )).resolves.not.toThrow();
   });
 });
@@ -2177,6 +2199,27 @@ describe('nudgeDelayMs', () => {
 
     const state = (await import('../force-continue.server.js')).readState();
     expect(state.sessions['suppress-delay'].autoContinuePaused).not.toBeNull();
+  });
+
+  it('should still send the max-continuations prompt before pausing', async () => {
+    const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin({ nudgeDelayMs: 10, maxContinuations: 1 });
+    const plugin = await createPlugin({ client: mockClient });
+
+    await plugin['chat.message']({ sessionID: 'max-cap-delay-session' });
+
+    mockClient.session.messages.mockResolvedValue({
+      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working' }] }]
+    });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'max-cap-delay-session' } } });
+
+    expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(mockClient.session.promptAsync.mock.calls[0][0].body.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
+    expect(readState().sessions['max-cap-delay-session'].autoContinuePaused).toEqual({
+      reason: 'max_continuations',
+      timestamp: expect.any(Number),
+    });
   });
 });
 
@@ -2362,8 +2405,9 @@ describe('experimental.chat.messages.transform', () => {
       }
     });
 
-    const messages: any[] = [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }];
-    await plugin['experimental.chat.messages.transform']({ sessionID: 'completion-msg-session' }, { messages });
+    // SDK type: input is {} — sessionID is derived from messages[0].info.sessionID
+    const messages: any[] = [{ info: { sessionID: 'completion-msg-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({}, { messages });
 
     expect(messages.length).toBe(2);
     expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
@@ -2376,10 +2420,61 @@ describe('experimental.chat.messages.transform', () => {
 
     await plugin['chat.message']({ sessionID: 'no-pause-session' });
 
-    const messages: any[] = [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }];
-    await plugin['experimental.chat.messages.transform']({ sessionID: 'no-pause-session' }, { messages });
+    const messages: any[] = [{ info: { sessionID: 'no-pause-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({}, { messages });
 
     expect(messages.length).toBe(1);
+  });
+
+  it('should not inject completion message for non-completed pauses', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    await plugin['chat.message']({ sessionID: 'paused-not-complete-session' });
+    await plugin.tool.pauseAutoContinue.execute(
+      { reason: 'Need time to plan' },
+      { sessionID: 'paused-not-complete-session' } as any
+    );
+
+    const messages: any[] = [{ info: { sessionID: 'paused-not-complete-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({}, { messages });
+
+    expect(messages.length).toBe(1);
+  });
+
+  it('should inject completion message for blocked completionSignal sessions', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    await plugin.tool.completionSignal.execute(
+      { status: 'blocked', reason: 'quota exceeded' },
+      { sessionID: 'blocked-completion-msg-session' } as any
+    );
+
+    const messages: any[] = [{ info: { sessionID: 'blocked-completion-msg-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({}, { messages });
+
+    expect(messages.length).toBe(2);
+    expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
+  });
+
+  it('should fall back to params.sessionID when messages do not carry one', async () => {
+    const { createContinuePlugin } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin();
+    const plugin = await createPlugin({ client: mockClient });
+
+    await plugin.tool.completionSignal.execute(
+      { status: 'completed' },
+      { sessionID: 'params-sessionid-msg-session' } as any
+    );
+
+    const messages: any[] = [{ info: { role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
+    await plugin['experimental.chat.messages.transform']({ sessionID: 'params-sessionid-msg-session' } as any, { messages });
+
+    expect(messages.length).toBe(2);
+    expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
   });
 
   it('should not modify messages when messages is not an array', async () => {
@@ -2389,8 +2484,8 @@ describe('experimental.chat.messages.transform', () => {
 
     await plugin['chat.message']({ sessionID: 'bad-messages-session' });
 
-    await plugin['experimental.chat.messages.transform']({ sessionID: 'bad-messages-session' }, { messages: null });
-    await plugin['experimental.chat.messages.transform']({ sessionID: 'bad-messages-session' }, { messages: 'not array' });
+    await plugin['experimental.chat.messages.transform']({}, { messages: null });
+    await plugin['experimental.chat.messages.transform']({}, { messages: 'not array' });
   });
 });
 

@@ -15,7 +15,8 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
             const sessionID = toolCtx?.sessionID;
             if (sessionID) {
                 const meta = sessionState.get(sessionID) || {};
-                meta.awaitingGuidance = { question, context, options, timestamp: Date.now() };
+                const timestamp = Date.now();
+                meta.awaitingGuidance = { question, context, options, timestamp };
                 meta.autopilotAttempts = meta.autopilotAttempts || 0;
                 sessionState.set(sessionID, meta);
                 log("info", "Guidance requested", { sessionID, question });
@@ -51,6 +52,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                         });
 
                         meta.awaitingGuidance = null;
+                        meta.autoContinuePaused = null;
                         sessionState.set(sessionID, meta);
                         log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
                         metrics.record(sessionID, "autopilot.attempt");
@@ -64,7 +66,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                 }
             }
 
-            return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAuto-continue paused until user responds.`;
+            return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nGuidance recorded. Auto-continue prompts will still be sent and will include the pending guidance.`;
         },
     });
 }

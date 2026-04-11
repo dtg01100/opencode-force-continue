@@ -136,7 +136,7 @@ Overview:
 Key components (in `force-continue.server.js`):
 
 - `createContinuePlugin(options)` — factory that returns the plugin server object. Accepts an optional `options` argument to override config defaults.
-- `ContinuePlugin` — the default exported plugin instance created by `createContinuePlugin()`.
+- `ContinuePlugin` — named export from `force-continue.server.js` / `src/plugin.js` containing the default server instance created by `createContinuePlugin()`.
 - Tools exposed to the model:
   - `completionSignal` — call this from the model to indicate the task is finished. Accepts `status` (e.g. `completed`, `blocked`, `interrupted`) and optional `reason`.
   - `validate` — checks that the plugin environment is wired correctly; supports `mode='probe'` to send a test prompt to a session.

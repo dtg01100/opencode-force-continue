@@ -53,22 +53,22 @@ export const tui = async (api, options, meta) => {
                         });
                         return;
                     }
-                    setAutopilotEnabled(sessionID, !state.enabled);
-
-                    const sessionMeta = sessionState.get(sessionID);
-                    const newEnabled = sessionMeta?.autopilotEnabled ?? false;
+                    const newEnabled = !state.enabled;
+                    setAutopilotEnabled(sessionID, newEnabled);
                     showToast({
                         message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
                         variant: newEnabled ? "warning" : "info",
                     });
 
-                    try {
-                        for (const dispose of disposeCommands) {
-                            if (typeof dispose === "function") dispose();
+                    if (!providerRegistered) {
+                        try {
+                            for (const dispose of disposeCommands) {
+                                if (typeof dispose === "function") dispose();
+                            }
+                        } finally {
+                            disposeCommands = [];
+                            registerCommands(getCommands);
                         }
-                    } finally {
-                        disposeCommands = [];
-                        registerCommands(getCommands);
                     }
                 },
 
@@ -86,6 +86,7 @@ export const tui = async (api, options, meta) => {
             providerRegistered = true;
             if (typeof dispose === "function") disposeCommands.push(dispose);
         } catch (error) {
+            providerRegistered = false;
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
                 const dispose = api.command.register(commands);

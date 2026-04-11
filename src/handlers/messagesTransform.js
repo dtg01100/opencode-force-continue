@@ -2,17 +2,24 @@ import { sessionState } from "../state.js";
 
 export function createMessagesTransformHandler() {
     return async (params = {}, ctx2 = {}) => {
-        const { sessionID } = params || {};
         const messages = ctx2 && ctx2.messages;
-        if (!sessionID || !messages || !Array.isArray(messages)) return;
+        if (!messages || !Array.isArray(messages) || messages.length === 0) return;
 
-        const meta = sessionState.get(sessionID);
-        if (!meta?.autoContinuePaused) return;
+        // Prefer the current messages array shape, but keep accepting the older
+        // params.sessionID fallback to avoid breaking tolerated callers/tests.
+        const sessionID = messages[0]?.info?.sessionID
+            || messages[0]?.parts?.[0]?.sessionID;
+        const resolvedSessionID = sessionID || params?.sessionID;
+        if (!resolvedSessionID) return;
 
-        // Insert a harmless system instruction to make intent explicit to downstream
-        // systems rather than attempting to forcibly silence them which might be ignored.
+        const meta = sessionState.get(resolvedSessionID);
+        const pauseReason = meta?.autoContinuePaused?.reason;
+        if (pauseReason !== "completed" && pauseReason !== "blocked" && pauseReason !== "interrupted") return;
+
+        // SDK Message type is UserMessage | AssistantMessage (no system role).
+        // Use assistant role to inject the completion note.
         messages.push({
-            info: { role: "system" },
+            info: { role: "assistant" },
             parts: [{
                 type: "text",
                 // Keep the injected message text in sync with tests that expect

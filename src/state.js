@@ -108,6 +108,13 @@ export function getActiveSessionCount() {
     return activeCount;
 }
 
+/**
+ * Get session-level autopilot enabled state only (no config fallback).
+ * Returns the session override value if set, otherwise null.
+ * For the full resolution including config fallback, use getAutopilotEnabled from autopilot.js.
+ * @param {string} sessionID
+ * @returns {boolean|null} Session autopilot state, or null if not overridden
+ */
 export function getAutopilotEnabled(sessionID) {
     const meta = sessionState.get(sessionID) || {};
     if ('autopilotEnabled' in meta) {

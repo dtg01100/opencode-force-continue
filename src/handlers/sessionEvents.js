@@ -256,13 +256,18 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
 
+            // Check continuation cap BEFORE incrementing
             if (meta.continuationCount >= config.maxContinuations) {
                 metricsTracker.record(sessionID, "escalation");
                 metricsTracker.record(sessionID, "prompt.escalation");
+                meta.autoContinuePaused = { reason: 'max_continuations', timestamp: Date.now() };
+                sessionState.set(sessionID, meta);
                 const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop, config);
-                log("info", "sent escalation prompt", { sessionID, count: meta.continuationCount });
-                await sendPrompt(sessionID, msg);
+                log("warn", "Auto-continue cap reached, pausing further continuations", { sessionID, count: meta.continuationCount });
+                await sendPrompt(sessionID, msg, { allowPausedReason: 'max_continuations' });
+                return;
             } else if (meta.continuationCount >= config.escalationThreshold) {
+                // Escalation prompt with progress-aware messaging (buildEscalationPrompt handles the message differentiation)
                 metricsTracker.record(sessionID, "escalation");
                 metricsTracker.record(sessionID, "prompt.escalation");
                 const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop, config);
@@ -297,7 +302,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
         }
     };
 
-    const sendPrompt = async (sessionID, text) => {
+    const sendPrompt = async (sessionID, text, options = {}) => {
         if (!text || typeof text !== 'string') return;
         if (config.nudgeDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, config.nudgeDelayMs));
@@ -307,8 +312,12 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
             const meta = sessionState.get(sessionID);
             if (meta?.autoContinuePaused) {
-                log("debug", "nudge suppressed after delay", { sessionID, reason: meta.autoContinuePaused.reason });
-                return;
+                if (meta.autoContinuePaused.reason === options.allowPausedReason) {
+                    // Allow the prompt that established this paused state to land.
+                } else {
+                    log("debug", "nudge suppressed after delay", { sessionID, reason: meta.autoContinuePaused.reason });
+                    return;
+                }
             }
         }
         try {
@@ -341,8 +350,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 log("error", "Failed while recording prompt error to session state", { sessionID, error: innerErr?.message ?? innerErr });
             }
 
-            // Rethrow so outer handler can also observe the failure if needed.
-            throw e;
+            // Do NOT rethrow — error is fully handled above (error count incremented,
+            // circuit breaker checked). Rethrowing would cause the outer catch in
+            // handleIdle to double-count the error.
         }
     };
 
@@ -370,7 +380,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
         if (event.type === "message.part.updated") {
             if (part?.type === "tool" && part.tool === "completionSignal" && part.state?.status === "completed") {
-                const args = part.state?.args || {};
+                // SDK type: ToolStateCompleted has `input`, but keep supporting
+                // the older `args` shape for compatibility with tolerated callers.
+                const args = part.state?.input || part.state?.args || {};
                 const status = (args.status || "completed").toLowerCase();
                 if (status === "completed" || status === "blocked" || status === "interrupted") {
                     const meta = sessionState.get(sessionID) || {};
@@ -415,11 +427,6 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 log("debug", "idle skipped: auto-continue paused", { sessionID });
                 return;
             }
-
-            // Note: We no longer skip nudges when awaitingGuidance is set.
-            // When autopilot is OFF, the AI may request guidance but should still
-            // receive continue nudges to keep working after the user responds.
-            // The nudge will include the pending guidance question if applicable.
 
             if (config.skipNudgeInSubagents && isSubagentSession(sessionID)) {
                 metricsTracker.record(sessionID, "idle.skipped.subagent");

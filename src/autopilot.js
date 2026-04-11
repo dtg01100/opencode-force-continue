@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
 // Import only the sessionState Map directly to avoid circular dependency
@@ -61,15 +61,21 @@ export function writeAutopilotState(state) {
     // write atomically: write to tmp file then rename
     const tmp = `${p}.tmp`;
     writeFileSync(tmp, JSON.stringify(autopilotState));
+    // renameSync is atomic on POSIX systems; on Windows it may fail if target exists
     try { unlinkSync(p); } catch (e) {}
-    // rename is atomic on most platforms
-    writeFileSync(p, readFileSync(tmp, "utf-8"));
-    try { unlinkSync(tmp); } catch (e) {}
+    renameSync(tmp, p);
   } catch (e) {
     console.error(`[force-continue] writeAutopilotState: failed to persist autopilot state to disk — ${e?.message}. In-memory state updated but other processes may not see this value.`);
   }
 }
 
+/**
+ * Build a prompt for autopilot decision-making.
+ * @param {string} question - The question to answer
+ * @param {string} [context] - Additional context
+ * @param {string} [options] - Available options
+ * @returns {string} Formatted prompt
+ */
 export function buildAutopilotPrompt(question, context, options) {
   if (!question || typeof question !== "string") {
     throw new Error("buildAutopilotPrompt: question is required and must be a string");
@@ -92,6 +98,12 @@ export function buildAutopilotPrompt(question, context, options) {
   return prompt;
 }
 
+/**
+ * Get autopilot enabled state with full resolution: session override → file store → config.
+ * @param {object} config - Configuration object with autopilotEnabled field
+ * @param {string} [sessionID] - Optional session ID to check for session-level override
+ * @returns {boolean} Whether autopilot is enabled
+ */
 export function getAutopilotEnabled(config, sessionID) {
     // Check session-level state if sessionID is provided
     if (sessionID) {
@@ -113,6 +125,11 @@ export function getAutopilotEnabled(config, sessionID) {
     return config?.autopilotEnabled ?? false;
 }
 
+/**
+ * Set autopilot enabled state for a session or globally.
+ * @param {string} [sessionID] - Session ID for session-level override, or null for global
+ * @param {boolean} enabled - Whether to enable or disable autopilot
+ */
 export function setAutopilotEnabled(sessionID, enabled) {
     if (sessionID) {
         // Directly update sessionState to avoid circular dependency
@@ -132,6 +149,11 @@ export function setAutopilotEnabled(sessionID, enabled) {
 
 const DEFAULT_AUTOPILOT_MAX_ATTEMPTS = 3;
 
+/**
+ * Get the maximum number of autopilot attempts before fallback.
+ * @param {object} [config] - Configuration object with autopilotMaxAttempts field
+ * @returns {number} Maximum attempts (default: 3)
+ */
 export function getAutopilotMaxAttempts(config) {
     return config?.autopilotMaxAttempts ?? DEFAULT_AUTOPILOT_MAX_ATTEMPTS;
 }

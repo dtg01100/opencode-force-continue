@@ -430,8 +430,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'rm -rf /' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'rm -rf /' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -441,8 +440,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'rm -rf /*' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'rm -rf /*' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -452,8 +450,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'rm -rf /home/user' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'rm -rf /home/user' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -463,13 +460,11 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'mkfs.ext4 /dev/sda' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'mkfs.ext4 /dev/sda' } }
       )).rejects.toThrow('Dangerous command blocked');
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd2', tool: 'bash', args: { command: 'mkfs -t ext4 /dev/sdb' } },
-        {}
+        { sessionID: 'd2', tool: 'bash', callID: 'test' }, { args: { command: 'mkfs -t ext4 /dev/sdb' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -479,8 +474,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'dd if=/dev/zero of=/dev/sda' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'dd if=/dev/zero of=/dev/sda' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -490,8 +484,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'dd if=/dev/urandom of=/dev/sdb bs=1M' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'dd if=/dev/urandom of=/dev/sdb bs=1M' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -501,13 +494,11 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'cat file.txt > /dev/sda' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'cat file.txt > /dev/sda' } }
       )).rejects.toThrow('Dangerous command blocked');
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd2', tool: 'bash', args: { command: 'echo data > /dev/sdb' } },
-        {}
+        { sessionID: 'd2', tool: 'bash', callID: 'test' }, { args: { command: 'echo data > /dev/sdb' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -517,8 +508,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'dd if=/dev/zero > /dev/nvme0n1' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'dd if=/dev/zero > /dev/nvme0n1' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -538,8 +528,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'cat /dev/urandom > /dev/sda' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'cat /dev/urandom > /dev/sda' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -551,8 +540,7 @@ describe('dangerous commands', () => {
       // cp with output redirect to disk device should be blocked
       // Pattern: /\bcp\b.*>\s*\/dev\/sd/ matches 'cp file > /dev/sda'
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'cp file > /dev/sda' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'cp file > /dev/sda' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -562,8 +550,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 'd1', tool: 'bash', args: { command: 'shred -n 3 file' } },
-        {}
+        { sessionID: 'd1', tool: 'bash', callID: 'test' }, { args: { command: 'shred -n 3 file' } }
       )).rejects.toThrow('Dangerous command blocked');
     });
 
@@ -589,18 +576,15 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's1', tool: 'bash', args: { command: 'git status' } },
-        {}
+        { sessionID: 's1', tool: 'bash', callID: 'test' }, { args: { command: 'git status' } }
       )).resolves.not.toThrow();
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's2', tool: 'bash', args: { command: 'npm install' } },
-        {}
+        { sessionID: 's2', tool: 'bash', callID: 'test' }, { args: { command: 'npm install' } }
       )).resolves.not.toThrow();
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's3', tool: 'bash', args: { command: 'echo "hello world"' } },
-        {}
+        { sessionID: 's3', tool: 'bash', callID: 'test' }, { args: { command: 'echo "hello world"' } }
       )).resolves.not.toThrow();
     });
 
@@ -611,8 +595,7 @@ describe('dangerous commands', () => {
 
       // Reading from /dev/urandom is safe
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's1', tool: 'bash', args: { command: 'head -c 32 /dev/urandom | base64' } },
-        {}
+        { sessionID: 's1', tool: 'bash', callID: 'test' }, { args: { command: 'head -c 32 /dev/urandom | base64' } }
       )).resolves.not.toThrow();
     });
 
@@ -622,8 +605,7 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's1', tool: 'bash', args: { command: 'dd if=input.txt of=output.txt' } },
-        {}
+        { sessionID: 's1', tool: 'bash', callID: 'test' }, { args: { command: 'dd if=input.txt of=output.txt' } }
       )).resolves.not.toThrow();
     });
 
@@ -633,18 +615,15 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's1', tool: 'bash', args: { command: 'rm file.txt' } },
-        {}
+        { sessionID: 's1', tool: 'bash', callID: 'test' }, { args: { command: 'rm file.txt' } }
       )).resolves.not.toThrow();
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's2', tool: 'bash', args: { command: 'rm -r directory' } },
-        {}
+        { sessionID: 's2', tool: 'bash', callID: 'test' }, { args: { command: 'rm -r directory' } }
       )).resolves.not.toThrow();
 
       await expect(plugin['tool.execute.before'](
-        { sessionID: 's3', tool: 'bash', args: { command: 'rm ./relative/path' } },
-        {}
+        { sessionID: 's3', tool: 'bash', callID: 'test' }, { args: { command: 'rm ./relative/path' } }
       )).resolves.not.toThrow();
     });
   });
@@ -656,13 +635,11 @@ describe('dangerous commands', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin['tool.execute.before'](
-        { sessionID: 'err-session', tool: 'bash', args: { command: 'rm -rf /' } },
-        {}
+        { sessionID: 'err-session', tool: 'bash', callID: 'test' }, { args: { command: 'rm -rf /' } }
       ).catch(() => {}); // Expected to throw
 
       await plugin['tool.execute.before'](
-        { sessionID: 'err-session', tool: 'bash', args: { command: 'mkfs /dev/sda' } },
-        {}
+        { sessionID: 'err-session', tool: 'bash', callID: 'test' }, { args: { command: 'mkfs /dev/sda' } }
       ).catch(() => {});
 
       const state = readState();

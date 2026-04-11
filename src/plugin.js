@@ -43,13 +43,22 @@ export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState, setA
 
 // Start periodic cleanup of expired sessions (runs every hour by default)
 // Uses sessionTtlMs from resolved config
-import { startPeriodicCleanup } from "./state.js";
-startPeriodicCleanup(60 * 60 * 1000, resolveConfig().sessionTtlMs);
+// Guarded so importing the module does not pin a process open.
+import { startPeriodicCleanup, stopPeriodicCleanup } from "./state.js";
+let periodicCleanupStarted = false;
+function ensurePeriodicCleanupStarted() {
+    if (periodicCleanupStarted) {
+        return;
+    }
+    periodicCleanupStarted = true;
+    startPeriodicCleanup(60 * 60 * 1000, resolveConfig().sessionTtlMs);
+}
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };
 
     return async (ctx) => {
+        ensurePeriodicCleanupStarted();
         const { client } = ctx;
         const logger = ctx?.logger ?? client?.logger ?? console;
 

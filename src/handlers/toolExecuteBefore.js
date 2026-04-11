@@ -12,10 +12,8 @@ const DANGEROUS_PATTERNS = [
     /\bdd\b.*\bof\b.*\/dev\/sd/,            // dd writing to disk devices
     />\s*\/dev\/sd[a-z]/,                   // Output redirection to disk devices
     />\s*\/dev\/nvme/,                      // Output redirection to NVMe devices
-    // Fork bomb pattern — use a safer, non-empty-group regex to avoid
-    // throwing when testing. Original pattern had an empty capture group that
-    // could behave oddly in some JS engines when converted from other sources.
-    /:.*\s*\{\s*:\|:\s*\}\s*;?/,        // Fork bomb-ish pattern (best-effort)
+    // Fork bomb pattern — matches :(){ :|:& }; and variants with whitespace
+    /:.*\s*\{\s*:\|:.*&?\s*\}\s*;?/,
     /\bcat\b.*>\s*\/dev\/sd/,               // cat with redirect to disk
     /\bcp\b.*>\s*\/dev\/sd/,                // cp with redirect to disk
     /\bshred\b/,                            // shred command
@@ -31,7 +29,8 @@ export function createToolExecuteBeforeHandler(config, log) {
         if (config.ignoreTools.includes(input.tool)) return;
 
         if (input.tool === "bash") {
-            const cmd = input.args?.command || "";
+            // Args are on the output parameter per SDK type: output: { args: any }
+            const cmd = output?.args?.command || "";
             if (typeof cmd !== 'string') return;
 
             // Check against regex patterns first. We only catch errors from the
