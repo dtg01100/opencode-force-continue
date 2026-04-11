@@ -1,4 +1,4 @@
-import { sessionState, updateLastSeen, isTaskDone, isSubagentSession } from "../state.js";
+import { sessionState, updateLastSeen, isTaskDone, isSubagentSession, consumeNextSessionAutopilotEnabled } from "../state.js";
 import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt } from "../autopilot.js";
 import { getUnfinishedTasks } from "../utils.js";
 
@@ -371,6 +371,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 meta.autoContinuePaused = null;
                 meta.sessionStartedAt = Date.now();
                 sessionState.set(sessionID, meta);
+                consumeNextSessionAutopilotEnabled(sessionID);
             } catch (e) {
                 log("debug", "session.created handler error", { sessionID, error: e?.message });
             }

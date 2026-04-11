@@ -1,4 +1,4 @@
-import { sessionState } from "./src/state.js";
+import { sessionState, setNextSessionAutopilotEnabled, peekNextSessionAutopilotEnabled } from "./src/state.js";
 import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
 
 export const id = "force-continue";
@@ -34,7 +34,10 @@ export const tui = async (api, options, meta) => {
         const hasSessionOverride = sessionMeta && Object.prototype.hasOwnProperty.call(sessionMeta, "autopilotEnabled");
         const globalState = readAutopilotState();
         const globalEnabled = globalState.timestamp !== null ? globalState.enabled : false;
-        const enabled = hasSessionOverride ? sessionMeta.autopilotEnabled : globalEnabled;
+        const nextSessionEnabled = peekNextSessionAutopilotEnabled();
+        const enabled = hasSessionOverride
+            ? sessionMeta.autopilotEnabled
+            : (sessionID ? globalEnabled : (nextSessionEnabled ?? globalEnabled));
         const state = { enabled };
         return [
             {
@@ -46,19 +49,20 @@ export const tui = async (api, options, meta) => {
                 category: "Force Continue",
                 onSelect: () => {
                     const sessionID = getCurrentSessionID();
-                    if (!sessionID) {
-                        showToast({
-                            message: "No active session",
-                            variant: "error",
-                        });
-                        return;
-                    }
                     const newEnabled = !state.enabled;
-                    setAutopilotEnabled(sessionID, newEnabled);
-                    showToast({
-                        message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
-                        variant: newEnabled ? "warning" : "info",
-                    });
+                    if (!sessionID) {
+                        setNextSessionAutopilotEnabled(newEnabled);
+                        showToast({
+                            message: newEnabled ? "Autopilot enabled for next session" : "Autopilot disabled for next session",
+                            variant: newEnabled ? "warning" : "info",
+                        });
+                    } else {
+                        setAutopilotEnabled(sessionID, newEnabled);
+                        showToast({
+                            message: newEnabled ? "Autopilot enabled" : "Autopilot disabled",
+                            variant: newEnabled ? "warning" : "info",
+                        });
+                    }
 
                     // If callback registration is not supported, re-register static
                     // commands so the UI can refresh the command list.

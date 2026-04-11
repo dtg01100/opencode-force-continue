@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState } from '../src/autopilot.js';
-import { sessionState } from '../src/state.js';
+import { sessionState, clearNextSessionAutopilotEnabled } from '../src/state.js';
 
 describe('TUI refresh on toggle', () => {
   beforeEach(() => {
     resetAutopilotState();
     sessionState.clear();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('getCommands callback always returns fresh state without re-registering when callbacks are supported', async () => {

@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState, writeAutopilotState, readAutopilotState } from '../src/autopilot.js';
-import { sessionState } from '../src/state.js';
+import { sessionState, clearNextSessionAutopilotEnabled } from '../src/state.js';
 
 describe('TUI graceful degradation', () => {
   beforeEach(() => {
     resetAutopilotState();
     sessionState.clear();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('works when api.ui.toast is undefined', async () => {
@@ -51,7 +52,7 @@ describe('TUI graceful degradation', () => {
     expect(() => commands[0].onSelect()).not.toThrow();
   });
 
-  it('shows "No active session" toast and does not mutate state when route is not a session', async () => {
+  it('sets autopilot for next session when route is not a session without mutating global state', async () => {
     let getCommandsFn: (() => any[]) | null = null;
     const toastCalls: any[] = [];
     const beforeSize = sessionState.size;
@@ -78,10 +79,21 @@ describe('TUI graceful degradation', () => {
 
     expect(toastCalls).toHaveLength(1);
     expect(toastCalls[0]).toMatchObject({
-      message: 'No active session',
-      variant: 'error',
+      message: 'Autopilot enabled for next session',
+      variant: 'warning',
     });
     expect(sessionState.size).toBe(beforeSize);
+
+    const global = readAutopilotState();
+    expect(global.enabled).toBe(false);
+    expect(global.timestamp).toBeNull();
+
+    // While still not in a session, command reflects one-shot next-session setting.
+    expect(getCommandsFn!()[0].title).toBe('Disable Autopilot');
+
+    // Switching route alone does not create a session state entry.
+    mockApi.route.current = { name: 'session', params: { sessionID: 'new-session-after-global-toggle' } };
+    expect(sessionState.get('new-session-after-global-toggle')?.autopilotEnabled).toBeUndefined();
   });
 
   it('works when api.command is undefined', async () => {
@@ -218,6 +230,7 @@ describe('TUI graceful degradation', () => {
 describe('TUI command metadata', () => {
   beforeEach(() => {
     resetAutopilotState();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('command has correct value field', async () => {
@@ -298,6 +311,7 @@ describe('TUI rapid toggle behavior', () => {
   beforeEach(() => {
     resetAutopilotState();
     sessionState.clear();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('handles enable→disable→enable in rapid succession', async () => {
@@ -374,6 +388,7 @@ describe('TUI onSelect concurrency', () => {
   beforeEach(() => {
     resetAutopilotState();
     sessionState.clear();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('handles concurrent onSelect calls without corruption', async () => {
@@ -448,6 +463,7 @@ describe('TUI state consistency', () => {
   beforeEach(() => {
     resetAutopilotState();
     sessionState.clear();
+    clearNextSessionAutopilotEnabled();
   });
 
   it('handles state with enabled=true but session override', async () => {

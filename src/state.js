@@ -1,6 +1,7 @@
 import { metrics } from "./metrics.js";
 
 export const sessionState = new Map();
+let nextSessionAutopilotEnabled = null;
 
 let sessionTtlMs = 24 * 60 * 60 * 1000; // 24 hours
 let cleanupInterval = null;
@@ -127,6 +128,27 @@ export function setAutopilotEnabled(sessionID, enabled) {
     const meta = sessionState.get(sessionID) || {};
     meta.autopilotEnabled = enabled;
     sessionState.set(sessionID, meta);
+}
+
+export function setNextSessionAutopilotEnabled(enabled) {
+    nextSessionAutopilotEnabled = Boolean(enabled);
+}
+
+export function peekNextSessionAutopilotEnabled() {
+    return nextSessionAutopilotEnabled;
+}
+
+export function clearNextSessionAutopilotEnabled() {
+    nextSessionAutopilotEnabled = null;
+}
+
+export function consumeNextSessionAutopilotEnabled(sessionID) {
+    if (nextSessionAutopilotEnabled === null) return false;
+    const meta = sessionState.get(sessionID) || {};
+    meta.autopilotEnabled = nextSessionAutopilotEnabled;
+    sessionState.set(sessionID, meta);
+    nextSessionAutopilotEnabled = null;
+    return true;
 }
 
 export function updateLastSeen(sessionID) {

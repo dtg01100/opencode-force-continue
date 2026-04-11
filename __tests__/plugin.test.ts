@@ -877,6 +877,30 @@ describe('ContinuePlugin', () => {
       const state = readState();
       expect(state.sessions['new-session-1']).toBeDefined();
     });
+
+    it('should consume one-shot next-session autopilot setting on session creation', async () => {
+      const { readState } = await import('../force-continue.server.js');
+      const { setNextSessionAutopilotEnabled, peekNextSessionAutopilotEnabled } = await import('../src/state.js');
+
+      setNextSessionAutopilotEnabled(true);
+      expect(peekNextSessionAutopilotEnabled()).toBe(true);
+
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({
+        event: {
+          type: 'session.created',
+          properties: { info: { id: 'new-session-oneshot' } }
+        }
+      });
+
+      const state = readState();
+      expect(state.sessions['new-session-oneshot']).toBeDefined();
+      expect(state.sessions['new-session-oneshot'].autopilotEnabled).toBe(true);
+      expect(peekNextSessionAutopilotEnabled()).toBeNull();
+    });
   });
 
   describe('session.deleted', () => {
