@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ValidateInput",
+  "description": "Input schema for the validate tool",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["dry", "probe"],
+      "default": "dry",
+      "description": "Validation mode: 'dry' for capability checks, 'probe' to send test prompt"
+    },
+    "sessionID": {
+      "type": "string",
+      "description": "Session ID required for probe mode"
+    },
+    "promptText": {
+      "type": "string",
+      "description": "Optional custom prompt text for probe mode"
+    }
+  },
+  "additionalProperties": false
+}

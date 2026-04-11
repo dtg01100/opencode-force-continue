@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ForceContinueConfig",
+  "description": "Configuration schema for the force-continue plugin",
+  "type": "object",
+  "properties": {
+    "maxContinuations": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5,
+      "description": "Maximum number of auto-continuations before hard cap"
+    },
+    "escalationThreshold": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3,
+      "description": "Number of continuations before escalation prompts begin"
+    },
+    "enableLoopDetection": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable detection of response repetition loops"
+    },
+    "enableToolLoopDetection": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable detection of tool call loops"
+    },
+    "autoContinueEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Master switch for auto-continuation behavior"
+    },
+    "cooldownMs": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Minimum milliseconds between continuation prompts"
+    },
+    "nudgeDelayMs": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2000,
+      "description": "Delay in milliseconds before sending nudge prompts"
+    },
+    "circuitBreakerThreshold": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "Number of errors before circuit breaker trips"
+    },
+    "enableFileTracking": {
+      "type": "boolean",
+      "default": true,
+      "description": "Track files modified during session"
+    },
+    "enableTaskTracking": {
+      "type": "boolean",
+      "default": true,
+      "description": "Track background tasks associated with session"
+    },
+    "enableCompletionSummary": {
+      "type": "boolean",
+      "default": true,
+      "description": "Generate completion summary when done"
+    },
+    "enableSystemPromptInjection": {
+      "type": "boolean",
+      "default": true,
+      "description": "Inject system prompts about available tools"
+    },
+    "logToStdout": {
+      "type": "boolean",
+      "default": false,
+      "description": "Log plugin activity to stdout"
+    },
+    "ignoreTools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["read", "glob", "grep"],
+      "description": "Tools to ignore for loop detection and dangerous command checks"
+    },
+    "dangerousCommands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["rm -rf /", "rm -rf ~", "mkfs", "dd if=/dev/zero", "> /dev/sda"],
+      "description": "Legacy string patterns for dangerous command blocking"
+    },
+    "autopilotEnabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable autonomous decision-making for guidance questions"
+    },
+    "autopilotMaxAttempts": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3,
+      "description": "Maximum autopilot attempts before falling back to user"
+    },
+    "skipNudgeInSubagents": {
+      "type": "boolean",
+      "default": true,
+      "description": "Skip continuation prompts in subagent sessions"
+    },
+    "sessionTtlMs": {
+      "type": "integer",
+      "minimum": 60000,
+      "default": 86400000,
+      "description": "Session time-to-live in milliseconds (default: 24 hours)"
+    }
+  },
+  "additionalProperties": false
+}

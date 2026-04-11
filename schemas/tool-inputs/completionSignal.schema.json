@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompletionSignalInput",
+  "description": "Input schema for the completionSignal tool",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["completed", "blocked", "interrupted"],
+      "description": "Completion status of the task"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Optional reason for blocked or interrupted status"
+    }
+  },
+  "required": ["status"],
+  "additionalProperties": false
+}

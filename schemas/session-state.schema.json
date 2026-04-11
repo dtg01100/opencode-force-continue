@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SessionState",
+  "description": "State tracked per-session by the force-continue plugin",
+  "type": "object",
+  "properties": {
+    "sessionStartedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp when session was created"
+    },
+    "lastSeen": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp of last activity"
+    },
+    "continuationCount": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of auto-continuations sent for this session"
+    },
+    "autoContinuePaused": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "blocked",
+                "interrupted",
+                "circuit_breaker",
+                "autopilot_max_attempts",
+                "max_continuations",
+                "user_paused",
+                "canceled",
+                "cancelled",
+                "aborted",
+                "stopped"
+              ]
+            },
+            "timestamp": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["reason", "timestamp"],
+          "additionalProperties": false
+        }
+      ],
+      "default": null,
+      "description": "Reason and timestamp for auto-continue pause, if paused"
+    },
+    "lastAssistantText": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "default": null,
+      "description": "Text content of last assistant message for loop detection"
+    },
+    "responseHistory": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Recent assistant responses for loop detection"
+    },
+    "toolCallHistory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "args": { "type": "object" },
+          "timestamp": { "type": "integer" }
+        },
+        "required": ["tool", "args"],
+        "additionalProperties": false
+      },
+      "default": [],
+      "description": "Recent tool calls for tool loop detection"
+    },
+    "filesModified": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object",
+          "description": "Set serialized as object when in memory"
+        }
+      ],
+      "description": "Set of file paths modified during session"
+    },
+    "errorCount": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of errors encountered in this session"
+    },
+    "autopilotEnabled": {
+      "type": "boolean",
+      "description": "Session-level autopilot override"
+    },
+    "awaitingGuidance": {
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "context": { "type": "string" },
+        "options": { "type": "string" },
+        "timestamp": { "type": "integer" }
+      },
+      "description": "Pending guidance request awaiting user input"
+    },
+    "lastProgressReport": {
+      "type": "object",
+      "properties": {
+        "progress": { "type": "string" },
+        "nextSteps": { "type": "string" },
+        "blockers": { "type": "string" },
+        "timestamp": { "type": "integer" }
+      },
+      "description": "Last status report from the agent"
+    },
+    "toolLoopDetected": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether a tool loop was detected"
+    },
+    "lastNudgeTimestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp of last nudge sent (for cooldown)"
+    },
+    "pendingNudgeTimer": {
+      "type": "integer",
+      "description": "Timer ID for pending delayed nudge"
+    }
+  },
+  "additionalProperties": true
+}

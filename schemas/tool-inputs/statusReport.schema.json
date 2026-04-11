@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StatusReportInput",
+  "description": "Input schema for the statusReport tool",
+  "type": "object",
+  "properties": {
+    "progress": {
+      "type": "string",
+      "description": "Description of progress made so far"
+    },
+    "nextSteps": {
+      "type": "string",
+      "description": "Description of planned next steps"
+    },
+    "blockers": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Any blockers encountered, or null if none"
+    }
+  },
+  "required": ["progress", "nextSteps", "blockers"],
+  "additionalProperties": false
+}

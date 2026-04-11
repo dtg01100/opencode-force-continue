@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RequestGuidanceInput",
+  "description": "Input schema for the requestGuidance tool",
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string",
+      "description": "The question to ask the user"
+    },
+    "context": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Optional context for the question"
+    },
+    "options": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Optional description of available options"
+    }
+  },
+  "required": ["question"],
+  "additionalProperties": false
+}
