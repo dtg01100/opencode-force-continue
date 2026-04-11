@@ -187,7 +187,7 @@ describe('state machine validation', () => {
       expect(paused.reason).toBe('user_paused');
     });
 
-    it('should remain paused after subsequent chat.message when completed', async () => {
+    it('should clear paused state when user responds after completion', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
@@ -205,7 +205,7 @@ describe('state machine validation', () => {
 
       expect(await getPaused('pause-7')).not.toBeNull();
       await plugin['chat.message']({ sessionID: 'pause-7' });
-      expect(await getPaused('pause-7')).not.toBeNull();
+      expect(await getPaused('pause-7')).toBeNull();
     });
   });
 

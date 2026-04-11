@@ -5,7 +5,6 @@ export function createChatMessageHandler() {
         if (!sessionID || typeof sessionID !== "string") return;
         try {
             const meta = sessionState.get(sessionID) || {};
-            const completionReached = meta.autoContinuePaused?.reason === 'completed';
             meta.lastSeen = Date.now();
             meta.continuationCount = 0;
             meta.lastAssistantText = null;
@@ -15,9 +14,7 @@ export function createChatMessageHandler() {
             meta.awaitingGuidance = null;
             meta.toolLoopDetected = false;
             meta.autopilotAttempts = 0;
-            if (!completionReached) {
-                meta.autoContinuePaused = null;
-            }
+            meta.autoContinuePaused = null;
             sessionState.set(sessionID, meta);
         } catch (e) {
             try {

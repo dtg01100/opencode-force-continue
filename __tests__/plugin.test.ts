@@ -209,7 +209,7 @@ describe('ContinuePlugin', () => {
       expect(await getPaused('test-session-3')).not.toBeNull();
     });
 
-    it('should preserve completed sessions after a chat message', async () => {
+    it('should clear paused state when user responds to completed session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
@@ -227,7 +227,7 @@ describe('ContinuePlugin', () => {
 
       expect(await getPaused('completed-session')).not.toBeNull();
       await plugin['chat.message']({ sessionID: 'completed-session' });
-      expect(await getPaused('completed-session')).not.toBeNull();
+      expect(await getPaused('completed-session')).toBeNull();
     });
 
     it('should mark session complete when part.sessionID resolves session', async () => {
