@@ -50,8 +50,34 @@ function validateMinimum(value, minimum, path) {
   return { valid: true, errors: [] };
 }
 
+function validateConst(value, constValue, path) {
+  if (value !== constValue) {
+    return { valid: false, errors: [{ path, message: `Value must equal: ${constValue}` }] };
+  }
+  return { valid: true, errors: [] };
+}
+
 function validateAgainstSchema(value, schema, path = "") {
   const errors = [];
+
+  if (schema.if) {
+    const ifResult = validateAgainstSchema(value, schema.if, path);
+    if (ifResult.valid && schema.then) {
+      const thenResult = validateAgainstSchema(value, schema.then, path);
+      errors.push(...thenResult.errors);
+    }
+    if (!ifResult.valid && schema.else) {
+      const elseResult = validateAgainstSchema(value, schema.else, path);
+      errors.push(...elseResult.errors);
+    }
+  }
+
+  if (schema.allOf) {
+    for (const branchSchema of schema.allOf) {
+      const branchResult = validateAgainstSchema(value, branchSchema, path);
+      errors.push(...branchResult.errors);
+    }
+  }
 
   if (schema.type) {
     const typeResult = validateType(value, schema.type, path);
@@ -65,6 +91,12 @@ function validateAgainstSchema(value, schema, path = "") {
     const enumResult = validateEnum(value, schema.enum, path);
     errors.push(...enumResult.errors);
     if (!enumResult.valid) return { valid: false, errors };
+  }
+
+  if (schema.const !== undefined) {
+    const constResult = validateConst(value, schema.const, path);
+    errors.push(...constResult.errors);
+    if (!constResult.valid) return { valid: false, errors };
   }
 
   if (schema.minimum !== undefined && typeof value === "number") {
@@ -108,18 +140,18 @@ function validateAgainstSchema(value, schema, path = "") {
     }
   }
 
-  if (schema.oneOf) {
-    const validBranches = [];
-    for (const branchSchema of schema.oneOf) {
-      const branchResult = validateAgainstSchema(value, branchSchema, path);
-      if (branchResult.valid) {
-        validBranches.push(branchSchema);
+    if (schema.oneOf) {
+        const validBranches = [];
+        for (const branchSchema of schema.oneOf) {
+          const branchResult = validateAgainstSchema(value, branchSchema, path);
+          if (branchResult.valid) {
+            validBranches.push(branchSchema);
+          }
+        }
+        if (validBranches.length === 0) {
+          errors.push({ path, message: "Value does not match one of the expected schemas" });
+        }
       }
-    }
-    if (validBranches.length === 0) {
-      errors.push({ path, message: "Value does not match any of the expected schemas" });
-    }
-  }
 
   return { valid: errors.length === 0, errors };
 }

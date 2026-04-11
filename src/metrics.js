@@ -18,6 +18,7 @@ function createMetricsTracker() {
         totalIdleSkippedSubagent: 0,
         totalIdleSkippedAwaiting: 0,
         totalMessagesEmpty: 0,
+        totalMessagesErrors: 0,
         totalLastMsgNotAssistant: 0,
         totalAutopilotAttempts: 0,
         totalAutopilotFallbacks: 0,
@@ -25,6 +26,7 @@ function createMetricsTracker() {
         promptEscalation: 0,
         promptLoopBreak: 0,
         promptCompletionNudge: 0,
+        promptErrors: 0,
         sessionContinuations: {},
         sessionErrors: {},
     };
@@ -51,19 +53,19 @@ function createMetricsTracker() {
                 case "idle.skipped.subagent": metrics.totalIdleSkippedSubagent++; break;
                 case "idle.skipped.awaiting.answer": metrics.totalIdleSkippedAwaiting++; break;
                 case "messages.empty": metrics.totalMessagesEmpty++; break;
-                case "messages.error": metrics.totalMessagesEmpty++; break;
+                case "messages.error": metrics.totalMessagesErrors++; break;
                 case "last.msg.not.assistant": metrics.totalLastMsgNotAssistant++; break;
                 case "last.msg.missing.role": metrics.totalLastMsgNotAssistant++; break;
                 case "prompt.continue": metrics.promptContinue++; break;
                 case "prompt.escalation": metrics.promptEscalation++; break;
                 case "prompt.loop.break": metrics.promptLoopBreak++; break;
                 case "prompt.completion.nudge": metrics.promptCompletionNudge++; break;
-                case "prompt.error": metrics.promptEscalation++; break;
+                case "prompt.error": metrics.promptErrors++; break;
                 case "autopilot.attempt": metrics.totalAutopilotAttempts++; break;
                 case "autopilot.fallback": metrics.totalAutopilotFallbacks++; break;
                 case "autopilot.fallback.question": metrics.totalAutopilotFallbacks++; break;
                 case "autopilot.question.attempt": metrics.totalAutopilotAttempts++; break;
-                case "completion.with.unfinished.tasks": metrics.totalCompletions++; break;
+                case "completion.with.unfinished.tasks": break;
             }
         },
         reset() {
@@ -85,6 +87,7 @@ function createMetricsTracker() {
             metrics.totalIdleSkippedSubagent = 0;
             metrics.totalIdleSkippedAwaiting = 0;
             metrics.totalMessagesEmpty = 0;
+            metrics.totalMessagesErrors = 0;
             metrics.totalLastMsgNotAssistant = 0;
             metrics.totalAutopilotAttempts = 0;
             metrics.totalAutopilotFallbacks = 0;
@@ -92,6 +95,7 @@ function createMetricsTracker() {
             metrics.promptEscalation = 0;
             metrics.promptLoopBreak = 0;
             metrics.promptCompletionNudge = 0;
+            metrics.promptErrors = 0;
             metrics.sessionContinuations = {};
             metrics.sessionErrors = {};
         },
@@ -119,6 +123,7 @@ function createMetricsTracker() {
                 idleSkippedSubagent: metrics.totalIdleSkippedSubagent,
                 idleSkippedAwaiting: metrics.totalIdleSkippedAwaiting,
                 messagesEmpty: metrics.totalMessagesEmpty,
+                messagesErrors: metrics.totalMessagesErrors,
                 lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
                 totalAutopilotAttempts: metrics.totalAutopilotAttempts,
                 totalAutopilotFallbacks: metrics.totalAutopilotFallbacks,
@@ -126,6 +131,7 @@ function createMetricsTracker() {
                 promptEscalation: metrics.promptEscalation,
                 promptLoopBreak: metrics.promptLoopBreak,
                 promptCompletionNudge: metrics.promptCompletionNudge,
+                promptErrors: metrics.promptErrors,
                 sessionsWithErrors: Object.entries(metrics.sessionErrors).filter(([, c]) => c > 0).length,
             };
         },

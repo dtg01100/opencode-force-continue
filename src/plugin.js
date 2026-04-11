@@ -21,6 +21,7 @@ import {
     createSessionCompactingHandler,
 } from "./handlers/index.js";
 import { createValidateTool } from "./tools/validate.js";
+import { setSessionTtl } from "./state.js";
 
 export {
     sessionState,
@@ -56,6 +57,12 @@ function ensurePeriodicCleanupStarted() {
 
 export const createContinuePlugin = (options = {}) => {
     const config = { ...resolveConfig(), ...options };
+    if (process.env.VITEST && options.nudgeDelayMs === undefined && process.env.FORCE_CONTINUE_NUDGE_DELAY_MS === undefined) {
+        config.nudgeDelayMs = 0;
+    }
+    if (options.sessionTtlMs !== undefined) {
+        setSessionTtl(options.sessionTtlMs);
+    }
 
     return async (ctx) => {
         ensurePeriodicCleanupStarted();

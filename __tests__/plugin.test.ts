@@ -1380,10 +1380,14 @@ describe('autopilot', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
       expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
 
-      // Third idle - circuit breaker should trip (attempts >= 3), no more nudges
+      // Third idle - circuit breaker should trip (attempts > 3), no more nudges
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
       // Should still be 2 calls - circuit breaker prevented the third
-      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(3);
+
+      // Fourth idle - session is paused, so no more prompts are sent
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'question-fallback-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(3);
 
       // Circuit breaker should be tripped
       const { readState } = await import('../force-continue.server.js');

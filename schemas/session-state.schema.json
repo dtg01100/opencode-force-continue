@@ -45,6 +45,9 @@
             "timestamp": {
               "type": "integer",
               "minimum": 0
+            },
+            "estimatedTime": {
+              "type": "string"
             }
           },
           "required": ["reason", "timestamp"],
@@ -107,23 +110,37 @@
       "description": "Session-level autopilot override"
     },
     "awaitingGuidance": {
-      "type": "object",
-      "properties": {
-        "question": { "type": "string" },
-        "context": { "type": "string" },
-        "options": { "type": "string" },
-        "timestamp": { "type": "integer" }
-      },
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "question": { "type": "string" },
+            "context": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "options": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "timestamp": { "type": "integer" }
+          },
+          "required": ["question", "timestamp"],
+          "additionalProperties": false
+        }
+      ],
       "description": "Pending guidance request awaiting user input"
     },
     "lastProgressReport": {
-      "type": "object",
-      "properties": {
-        "progress": { "type": "string" },
-        "nextSteps": { "type": "string" },
-        "blockers": { "type": "string" },
-        "timestamp": { "type": "integer" }
-      },
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "progress": { "type": "string" },
+            "nextSteps": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "blockers": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "timestamp": { "type": "integer" }
+          },
+          "required": ["progress", "timestamp"],
+          "additionalProperties": false
+        }
+      ],
       "description": "Last status report from the agent"
     },
     "toolLoopDetected": {

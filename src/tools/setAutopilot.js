@@ -1,6 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { writeAutopilotState } from "../autopilot.js";
-import { sessionState } from "../state.js";
+import { setAutopilotEnabled } from "../autopilot.js";
 
 export function createSetAutopilotTool(config, log) {
     return tool({
@@ -9,37 +8,16 @@ export function createSetAutopilotTool(config, log) {
             enabled: tool.schema.boolean().describe("Whether to enable (true) or disable (false) autopilot."),
             sessionID: tool.schema.string().optional().describe("Optional session ID to enable/disable autopilot for a specific session. If not provided, sets the global autopilot state."),
         },
-        execute: async ({ enabled, sessionID }, toolCtx) => {
-            const effectiveSessionID = sessionID || toolCtx?.sessionID;
-            if (effectiveSessionID) {
-                // Set per-session override AND also update the global autopilot
-                // state to match tests that expect the tool to toggle both.
-                const meta = sessionState.get(effectiveSessionID) || {};
-                meta.autopilotEnabled = enabled;
-                sessionState.set(effectiveSessionID, meta);
-                // Also write global state so callers that read global state will
-                // observe the change. This keeps behavior consistent with the
-                // existing test-suite expectations.
-                try {
-                    writeAutopilotState({ enabled, timestamp: Date.now() });
-                } catch (e) {
-                    log("warn", "Failed to write global autopilot state", { error: e?.message });
-                }
-                log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool for session ${effectiveSessionID}`);
-                return `Autopilot ${enabled ? "enabled" : "disabled"} for session ${effectiveSessionID}.`;
-            } else {
-                // Globally toggling: write global state and clear ALL session-level overrides
-                // so no stale per-session setting can shadow the global value.
-                writeAutopilotState({ enabled, timestamp: Date.now() });
-                for (const [sid, meta] of sessionState) {
-                    if (Object.prototype.hasOwnProperty.call(meta, "autopilotEnabled")) {
-                        delete meta.autopilotEnabled;
-                        sessionState.set(sid, meta);
-                    }
-                }
-                log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool (global)`);
-                return `Autopilot ${enabled ? "enabled" : "disabled"}.`;
+        execute: async ({ enabled, sessionID }) => {
+            if (sessionID) {
+                setAutopilotEnabled(sessionID, enabled);
+                log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool for session ${sessionID}`);
+                return `Autopilot ${enabled ? "enabled" : "disabled"} for session ${sessionID}.`;
             }
+
+            setAutopilotEnabled(null, enabled);
+            log("info", `Autopilot ${enabled ? "enabled" : "disabled"} via tool (global)`);
+            return `Autopilot ${enabled ? "enabled" : "disabled"}.`;
         },
     });
 }

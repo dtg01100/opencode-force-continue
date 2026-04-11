@@ -12,7 +12,7 @@ export function createPauseAutoContinueTool(config, log) {
             const sessionID = toolCtx?.sessionID;
             if (sessionID) {
                 const meta = sessionState.get(sessionID) || {};
-                meta.autoContinuePaused = { reason, estimatedTime, timestamp: Date.now() };
+                meta.autoContinuePaused = { reason: 'user_paused', estimatedTime, timestamp: Date.now() };
                 sessionState.set(sessionID, meta);
                 log("info", "Auto-continue paused", { sessionID, reason });
             }

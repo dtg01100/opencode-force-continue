@@ -389,7 +389,7 @@ describe('metrics events', () => {
       metrics.record('s1', 'completion.with.unfinished.tasks');
       
       const summary = metrics.getSummary();
-      expect(summary.completions).toBe(1);
+      expect(summary.completions).toBe(0);
     });
   });
 

@@ -19,5 +19,18 @@
       "description": "Optional custom prompt text for probe mode"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "probe" }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "required": ["sessionID"]
+      }
+    }
+  ],
   "additionalProperties": false
 }

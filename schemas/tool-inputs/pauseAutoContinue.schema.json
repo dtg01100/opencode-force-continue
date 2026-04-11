@@ -13,6 +13,5 @@
       "description": "Estimated time until resumption"
     }
   },
-  "required": ["reason"],
   "additionalProperties": false
 }

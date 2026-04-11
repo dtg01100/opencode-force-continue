@@ -188,7 +188,7 @@ describe('configuration fuzzing', () => {
       expect(config.maxContinuations).toBe(5);
     });
 
-    it('should handle config file with wrong types', async () => {
+    it('should ignore config file properties with wrong types', async () => {
       const configPath = join(tempDir, 'force-continue.config.json');
       writeFileSync(configPath, JSON.stringify({
         maxContinuations: "should-be-number",
@@ -203,12 +203,12 @@ describe('configuration fuzzing', () => {
       const config = resolveConfig();
 
       process.chdir(originalCwd);
-      expect(config.maxContinuations).toBe("should-be-number");
-      expect(config.enableLoopDetection).toBe("should-be-boolean");
-      expect(config.ignoreTools).toBe("should-be-array");
+      expect(config.maxContinuations).toBe(5);
+      expect(config.enableLoopDetection).toBe(true);
+      expect(config.ignoreTools).toEqual(["read", "glob", "grep"]);
     });
 
-    it('should handle config file with extra unknown properties', async () => {
+    it('should ignore config file unknown properties', async () => {
       const configPath = join(tempDir, 'force-continue.config.json');
       writeFileSync(configPath, JSON.stringify({
         unknownProperty: "some-value",
@@ -223,8 +223,8 @@ describe('configuration fuzzing', () => {
 
       process.chdir(originalCwd);
       expect(config.maxContinuations).toBe(5);
-      expect(config.unknownProperty).toBe("some-value");
-      expect(config.anotherUnknown).toBe(123);
+      expect(config.unknownProperty).toBeUndefined();
+      expect(config.anotherUnknown).toBeUndefined();
     });
 
     it('should handle deeply nested malformed config', async () => {
@@ -333,7 +333,7 @@ describe('configuration fuzzing', () => {
       const config = resolveConfig();
 
       process.chdir(originalCwd);
-      expect(config.customProperty).toBe(longString);
+      expect(config.customProperty).toBeUndefined();
     });
   });
 });
@@ -396,6 +396,16 @@ describe('schema validation', () => {
     expect(result.errors.some(e => e.message.includes('one of'))).toBe(true);
   });
 
+  it('should validate session state with paused estimatedTime and nullable guidance/progress fields', async () => {
+    const { validateSessionState } = await import('../src/validation.js');
+    const result = validateSessionState({
+      autoContinuePaused: { reason: 'user_paused', timestamp: Date.now(), estimatedTime: '5 minutes' },
+      awaitingGuidance: { question: 'Use A or B?', context: null, options: null, timestamp: Date.now() },
+      lastProgressReport: { progress: 'Working', nextSteps: null, blockers: null, timestamp: Date.now() }
+    });
+    expect(result.valid).toBe(true);
+  });
+
   it('should validate completionSignal tool input', async () => {
     const { validateToolInput } = await import('../src/validation.js');
     const result = validateToolInput('completionSignal', { status: 'completed' });
@@ -418,11 +428,10 @@ describe('schema validation', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('should reject statusReport with missing required fields', async () => {
+  it('should allow statusReport with only progress', async () => {
     const { validateToolInput } = await import('../src/validation.js');
     const result = validateToolInput('statusReport', { progress: 'Only progress' });
-    expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('Missing required'))).toBe(true);
+    expect(result.valid).toBe(true);
   });
 
   it('should validate validate tool input', async () => {

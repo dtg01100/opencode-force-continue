@@ -26,8 +26,8 @@ function containsQuestion(text) {
 
 function extractQuestions(text) {
     if (!text) return [];
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    return sentences.filter(s => s.includes('?') && WAITING_INDICATORS.test(s)).map(s => s.trim());
+    const matches = text.match(/[^.!?]*\?+/g) || [];
+    return matches.map(s => s.trim()).filter(s => s.length > 0 && WAITING_INDICATORS.test(s));
 }
 
 function getLastAssistantText(messages) {
@@ -147,6 +147,11 @@ function buildLoopBreakPrompt(contextText) {
 }
 
 export function createSessionEventsHandler(ctx, config, client, metricsTracker, log) {
+    const getNudgeDelayMs = () => {
+        const delay = typeof config.nudgeDelayMs === "number" ? config.nudgeDelayMs : 0;
+        return delay > 0 ? delay : 0;
+    };
+
     const handleIdle = async (sessionID, meta, hasTasks, unfinishedTasks) => {
         if (!config.autoContinueEnabled) return;
 
@@ -197,8 +202,6 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 log("info", "Progress detected, resetting continuation and autopilot attempt counts", { sessionID });
             }
 
-            // increment continuation count after checking for progress reset
-            meta.continuationCount = (meta.continuationCount || 0) + 1;
             meta.lastAssistantText = contextText;
             if (contextText) {
                 responseHistory.unshift(contextText);
@@ -207,7 +210,6 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
 
             sessionState.set(sessionID, meta);
-            metricsTracker.record(sessionID, "continuation");
 
             if (inLoop) {
                 metricsTracker.record(sessionID, "loop.detected");
@@ -228,7 +230,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                     meta.autopilotAttempts = currentAttempts;
                     const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
 
-                    if (currentAttempts >= autopilotMaxAttempts) {
+                    if (currentAttempts > autopilotMaxAttempts) {
                         log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
                         metricsTracker.record(sessionID, "autopilot.fallback.question");
                         metricsTracker.record(sessionID, "circuit.breaker.trip");
@@ -255,6 +257,10 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 }
                 return;
             }
+
+            meta.continuationCount = (meta.continuationCount || 0) + 1;
+            sessionState.set(sessionID, meta);
+            metricsTracker.record(sessionID, "continuation");
 
             // Check continuation cap BEFORE incrementing
             if (meta.continuationCount >= config.maxContinuations) {
@@ -304,8 +310,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
     const sendPrompt = async (sessionID, text, options = {}) => {
         if (!text || typeof text !== 'string') return;
-        if (config.nudgeDelayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, config.nudgeDelayMs));
+        const nudgeDelayMs = getNudgeDelayMs();
+        if (nudgeDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, nudgeDelayMs));
             if (!sessionState.has(sessionID)) {
                 log("debug", "nudge suppressed after delay: session deleted", { sessionID });
                 return;
@@ -424,7 +431,11 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
 
             if (meta.autoContinuePaused) {
-                metricsTracker.record(sessionID, "idle.skipped.paused");
+                if (meta.autoContinuePaused.reason === "completed") {
+                    metricsTracker.record(sessionID, "idle.skipped.complete");
+                } else {
+                    metricsTracker.record(sessionID, "idle.skipped.paused");
+                }
                 log("debug", "idle skipped: auto-continue paused", { sessionID });
                 return;
             }

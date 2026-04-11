@@ -247,10 +247,13 @@ describe('autopilot circuit breaker on AI questions during idle', () => {
     await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'idle-question-session' } } });
     expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
 
-    // Second idle — autopilot answers again (attempt 2 >= maxAttempts, circuit trips)
+    // Second idle — autopilot answers again (attempt 2)
     await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'idle-question-session' } } });
-    // After circuit breaker trips, no more prompts should be sent
-    expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
+    expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
+
+    // Third idle — limit exceeded, circuit breaker trips and no more prompts are sent
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'idle-question-session' } } });
+    expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
 
     const state = readState();
     expect(state.sessions['idle-question-session'].autoContinuePaused).toEqual({
@@ -445,9 +448,10 @@ describe('setAutopilot tool', () => {
     expect(result).toBe('Autopilot enabled for session my-session.');
     expect(sessionState.get('my-session')?.autopilotEnabled).toBe(true);
 
-    // Global autopilot state should also be updated
+    // Global autopilot state should remain unchanged for session overrides
     const { readAutopilotState } = await import('../src/autopilot.js');
-    expect(readAutopilotState().enabled).toBe(true);
+    expect(readAutopilotState().enabled).toBe(false);
+    expect(readAutopilotState().timestamp).toBeNull();
   });
 
   it('should disable session-level autopilot when sessionID argument is provided', async () => {
@@ -466,7 +470,7 @@ describe('setAutopilot tool', () => {
     expect(sessionState.get('another-session')?.autopilotEnabled).toBe(false);
   });
 
-  it('should use toolCtx sessionID when sessionID argument is not provided', async () => {
+  it('should set global autopilot when sessionID argument is not provided', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const { resetAutopilotState } = await import('../src/autopilot.js');
     const { sessionState } = await import('../src/state.js');
@@ -478,8 +482,10 @@ describe('setAutopilot tool', () => {
     const toolDef = plugin.tool.setAutopilot;
     const result = await toolDef.execute({ enabled: true }, { sessionID: 'toolctx-session' } as any);
 
-    expect(result).toBe('Autopilot enabled for session toolctx-session.');
-    expect(sessionState.get('toolctx-session')?.autopilotEnabled).toBe(true);
+    expect(result).toBe('Autopilot enabled.');
+    expect(sessionState.get('toolctx-session')?.autopilotEnabled).toBeUndefined();
+    const { readAutopilotState } = await import('../src/autopilot.js');
+    expect(readAutopilotState().enabled).toBe(true);
   });
 
   it('should prefer explicit sessionID argument over toolCtx sessionID', async () => {

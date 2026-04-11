@@ -28,6 +28,22 @@ export function getTaskHookCandidates(ctx) {
  */
 export async function getUnfinishedTasks(ctx, sessionID, logger = null) {
     const candidates = getTaskHookCandidates(ctx);
+
+    const logTaskError = (error) => {
+        if (!logger) return;
+        try {
+            if (typeof logger === "function") {
+                logger("error", "Failed to query tasks", { error: error?.stack ?? error });
+                return;
+            }
+            if (typeof logger.error === "function") {
+                logger.error("Failed to query tasks", { error: error?.stack ?? error });
+                return;
+            }
+        } catch (logErr) {
+            try { console.error("force-continue: Failed to log task query error", logErr); } catch (ignored) {}
+        }
+    };
     
     for (const fn of candidates) {
         if (typeof fn !== "function") continue;
@@ -40,14 +56,7 @@ export async function getUnfinishedTasks(ctx, sessionID, logger = null) {
                 return tasks.filter(t => t && t.status && !isTaskDone(t.status));
             }
         } catch (e) {
-            if (logger) {
-                try {
-                    logger("error", "Failed to query tasks", { error: e?.stack ?? e });
-                } catch (logErr) {
-                    // If logger fails, fallback to console to avoid silent failures
-                    try { console.error("force-continue: Failed to log task query error", logErr); } catch (ee) {}
-                }
-            }
+            logTaskError(e);
         }
     }
     

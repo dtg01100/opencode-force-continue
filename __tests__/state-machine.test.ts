@@ -41,7 +41,7 @@ describe('state machine validation', () => {
 
       const state = readState();
       expect(state.sessions['lifecycle-1']).toBeDefined();
-      expect(state.sessions['lifecycle-1'].autoContinuePaused).toBeUndefined();
+      expect(state.sessions['lifecycle-1'].autoContinuePaused).toBeNull();
     });
 
     it('should initialize state on chat.message', async () => {

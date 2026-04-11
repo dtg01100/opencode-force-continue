@@ -16,6 +16,9 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
             if (sessionID) {
                 const meta = sessionState.get(sessionID) || {};
                 const timestamp = Date.now();
+                if (!("autoContinuePaused" in meta)) {
+                    meta.autoContinuePaused = null;
+                }
                 meta.awaitingGuidance = { question, context, options, timestamp };
                 meta.autopilotAttempts = meta.autopilotAttempts || 0;
                 sessionState.set(sessionID, meta);

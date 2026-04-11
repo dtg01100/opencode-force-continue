@@ -20,6 +20,6 @@
       "description": "Any blockers encountered, or null if none"
     }
   },
-  "required": ["progress", "nextSteps", "blockers"],
+  "required": ["progress"],
   "additionalProperties": false
 }

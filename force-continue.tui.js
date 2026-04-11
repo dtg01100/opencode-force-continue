@@ -1,5 +1,6 @@
 import { sessionState, setNextSessionAutopilotEnabled, peekNextSessionAutopilotEnabled } from "./src/state.js";
 import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
+import { resolveConfig } from "./src/config.js";
 
 export const id = "force-continue";
 
@@ -33,7 +34,7 @@ export const tui = async (api, options, meta) => {
         const sessionMeta = sessionID ? sessionState.get(sessionID) : null;
         const hasSessionOverride = sessionMeta && Object.prototype.hasOwnProperty.call(sessionMeta, "autopilotEnabled");
         const globalState = readAutopilotState();
-        const globalEnabled = globalState.timestamp !== null ? globalState.enabled : false;
+        const globalEnabled = globalState.timestamp !== null ? globalState.enabled : resolveConfig().autopilotEnabled;
         const nextSessionEnabled = peekNextSessionAutopilotEnabled();
         const enabled = hasSessionOverride
             ? sessionMeta.autopilotEnabled

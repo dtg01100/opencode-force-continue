@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, expect } from 'vitest';
 
 interface MockClient {
   session: {
@@ -14,7 +14,7 @@ interface MockContext {
 }
 
 interface EventSequence {
-  events: Array<{ type: string; properties?: any; input?: any; output?: any }>;
+  events: Array<{ type: string; properties?: any; input?: any; output?: any; assertion?: (context: { plugin: any; state: any; mockClient: MockClient }) => Promise<void> | void }>;
   assertions: Array<(context: { plugin: any; state: any; mockClient: MockClient }) => Promise<void> | void>;
 }
 
@@ -111,21 +111,25 @@ class EventSequenceBuilder {
   }
 
   assertPromptAsyncCalled(times: number): this {
-    this.assertions.push(async ({ mockClient }) => {
+    const assertion = async ({ mockClient }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(times);
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertPromptAsyncNotCalled(): this {
-    this.assertions.push(async ({ mockClient }) => {
+    const assertion = async ({ mockClient }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertSessionPaused(sessionID: string, reason: string | null): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       const paused = state.sessions[sessionID]?.autoContinuePaused;
       if (reason === null) {
         expect(paused).toBeNull();
@@ -133,50 +137,63 @@ class EventSequenceBuilder {
         expect(paused).not.toBeNull();
         expect(paused.reason).toBe(reason);
       }
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertContinuationCount(sessionID: string, count: number): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(state.sessions[sessionID]?.continuationCount).toBe(count);
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertSessionExists(sessionID: string): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(state.sessions[sessionID]).toBeDefined();
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertSessionNotExists(sessionID: string): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(state.sessions[sessionID]).toBeUndefined();
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertToolCallHistoryLength(sessionID: string, length: number): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       expect(state.sessions[sessionID]?.toolCallHistory?.length).toBe(length);
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   assertFilesModified(sessionID: string, files: string[]): this {
-    this.assertions.push(async ({ state }) => {
+    const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
       const modifiedFiles = Array.from(state.sessions[sessionID]?.filesModified || []);
       for (const file of files) {
         expect(modifiedFiles).toContain(file);
       }
-    });
+    };
+    this.assertions.push(assertion);
+    this.events.push({ type: '__assert__', assertion });
     return this;
   }
 
   customAssertion(fn: (context: { plugin: any; state: any; mockClient: MockClient }) => Promise<void> | void): this {
     this.assertions.push(fn);
+    this.events.push({ type: '__assert__', assertion: fn });
     return this;
   }
 
@@ -184,7 +201,10 @@ class EventSequenceBuilder {
     const { readState } = await import('../force-continue.server.js');
 
     for (const event of this.events) {
-      if (event.type.startsWith('tool.execute')) {
+      if (event.type === '__assert__') {
+        const state = readState();
+        await event.assertion?.({ plugin, state, mockClient: this.mockClient });
+      } else if (event.type.startsWith('tool.execute')) {
         if (event.type === 'tool.execute.before') {
           await plugin['tool.execute.before'](
             { sessionID: event.properties.sessionID, tool: event.properties.tool, callID: event.properties.callID },
@@ -200,11 +220,6 @@ class EventSequenceBuilder {
       } else {
         await plugin.event({ event: { type: event.type, properties: event.properties } });
       }
-    }
-
-    const state = readState();
-    for (const assertion of this.assertions) {
-      await assertion({ plugin, state, mockClient: this.mockClient });
     }
   }
 
