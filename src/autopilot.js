@@ -157,3 +157,118 @@ const DEFAULT_AUTOPILOT_MAX_ATTEMPTS = 3;
 export function getAutopilotMaxAttempts(config) {
     return config?.autopilotMaxAttempts ?? DEFAULT_AUTOPILOT_MAX_ATTEMPTS;
 }
+
+/**
+ * Determine if autopilot should take action for an idle session.
+ * Returns a decision object indicating what autopilot should do.
+ * 
+ * @param {object} meta - Session metadata
+ * @param {object} config - Configuration object
+ * @param {string} sessionID - Session ID
+ * @param {boolean} aiAskedQuestion - Whether the AI's last message contains a question
+ * @returns {object} Decision with shape: { action: 'resolve_guidance' | 'answer_question' | 'noop', ... }
+ */
+export function getAutopilotDecision(meta, config, sessionID, aiAskedQuestion) {
+    const autopilotEnabled = getAutopilotEnabled(config, sessionID);
+    if (!autopilotEnabled) {
+        return { action: 'noop', reason: 'autopilot_disabled' };
+    }
+
+    // Check if there's pending guidance to resolve
+    if (meta.awaitingGuidance && !aiAskedQuestion) {
+        return {
+            action: 'resolve_guidance',
+            question: meta.awaitingGuidance.question,
+            context: meta.awaitingGuidance.context,
+            options: meta.awaitingGuidance.options,
+            attempts: (meta.autopilotAttempts || 0) + 1,
+            maxAttempts: getAutopilotMaxAttempts(config)
+        };
+    }
+
+    // Check if AI asked a question that needs auto-answering
+    if (aiAskedQuestion) {
+        return {
+            action: 'answer_question',
+            attempts: (meta.autopilotAttempts || 0) + 1,
+            maxAttempts: getAutopilotMaxAttempts(config)
+        };
+    }
+
+    return { action: 'noop', reason: 'no_autopilot_trigger' };
+}
+
+/**
+ * Execute an autopilot decision returned by getAutopilotDecision.
+ * 
+ * @param {object} decision - Decision object from getAutopilotDecision
+ * @param {object} ctx - Context with sessionState, client, log, metricsTracker
+ * @param {string} sessionID - Session ID
+ * @param {string} contextText - AI's last response text
+ * @returns {Promise<boolean>} True if autopilot took action, false if it fell back
+ */
+export async function runAutopilotStep(decision, ctx, sessionID, contextText) {
+    const { sessionState: sState, client, log, metricsTracker, config, sendPrompt, extractQuestions, buildAutopilotPrompt: buildPrompt } = ctx;
+
+    if (decision.action === 'noop') {
+        return false;
+    }
+
+    if (decision.action === 'resolve_guidance') {
+        if (decision.attempts > decision.maxAttempts) {
+            log("info", "Autopilot max guidance attempts reached, pausing", { sessionID });
+            metricsTracker.record(sessionID, "autopilot.fallback.guidance");
+            // Import setPauseState lazily to avoid circular dependency
+            const { setPauseState } = await import("./state.js");
+            setPauseState(sessionID, 'autopilot_max_attempts');
+            return false;
+        }
+
+        // Update attempt count
+        const meta = sState.get(sessionID) || {};
+        meta.autopilotAttempts = decision.attempts;
+        sState.set(sessionID, meta);
+
+        const prompt = buildPrompt(
+            decision.question,
+            decision.context,
+            decision.options
+        );
+        metricsTracker.record(sessionID, "autopilot.guidance.resolution");
+        log("info", "Autopilot resolving pending guidance", { sessionID, question: decision.question });
+        await sendPrompt(sessionID, prompt);
+        return true;
+    }
+
+    if (decision.action === 'answer_question') {
+        if (decision.attempts > decision.maxAttempts) {
+            log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
+            metricsTracker.record(sessionID, "autopilot.fallback.question");
+            metricsTracker.record(sessionID, "circuit.breaker.trip");
+            const { setPauseState } = await import("./state.js");
+            setPauseState(sessionID, 'autopilot_max_attempts');
+            log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: decision.attempts });
+            return false;
+        }
+
+        // Update attempt count
+        const meta = sState.get(sessionID) || {};
+        meta.autopilotAttempts = decision.attempts;
+        sState.set(sessionID, meta);
+
+        const questions = extractQuestions(contextText);
+        const questionText = questions.length > 0 ? questions.join(' ') : contextText;
+        const prompt = buildPrompt(
+            `You asked: ${questionText}`,
+            `Your last response suggested you were waiting for an answer.`,
+            "Choose a reasonable answer and proceed with your work."
+        );
+        metricsTracker.record(sessionID, "autopilot.question.attempt");
+        log("info", "Autopilot answering AI question", { sessionID, questions });
+        await sendPrompt(sessionID, prompt);
+        return true;
+    }
+
+    return false;
+}
+

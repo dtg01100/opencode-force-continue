@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { sessionState } from "../state.js";
+import { sessionState, setCompletionState, getCompletionStatus } from "../state.js";
 import { metrics } from "../metrics.js";
 import { getUnfinishedTasks } from "../utils.js";
 
@@ -15,18 +15,14 @@ export function createCompletionSignalTool(ctx, config) {
             if (status === "blocked") {
                 metrics.record(sessionID, "blocked");
                 if (sessionID) {
-                    const meta = sessionState.get(sessionID) || {};
-                    meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
-                    sessionState.set(sessionID, meta);
+                    setCompletionState(sessionID, 'blocked', { reason });
                 }
                 return `Agent is blocked: ${reason || "No reason provided"}. Stopping auto-continue.`;
             }
             if (status === "interrupted") {
                 metrics.record(sessionID, "interrupted");
                 if (sessionID) {
-                    const meta = sessionState.get(sessionID) || {};
-                    meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
-                    sessionState.set(sessionID, meta);
+                    setCompletionState(sessionID, 'interrupted', { reason });
                 }
                 return `Agent interrupted: ${reason || "No reason provided"}. Stopping auto-continue.`;
             }
@@ -47,11 +43,10 @@ export function createCompletionSignalTool(ctx, config) {
             metrics.record(sessionID, "completion");
             if (sessionID) {
                 const meta = sessionState.get(sessionID) || {};
-                if (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed") {
+                if (getCompletionStatus(meta) === "completed") {
                     return `completionSignal was already called. Do NOT call it again. Remain silent.`;
                 }
-                meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
-                sessionState.set(sessionID, meta);
+                setCompletionState(sessionID, 'completed');
             }
             return "Task completed. You may now stop.";
         },

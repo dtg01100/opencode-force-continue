@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { sessionState } from "../state.js";
+import { sessionState, setPauseState, clearPauseState } from "../state.js";
 import { metrics } from "../metrics.js";
 import { buildAutopilotPrompt, getAutopilotEnabled, getAutopilotMaxAttempts } from "../autopilot.js";
 
@@ -38,8 +38,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                         metrics.record(sessionID, "autopilot.fallback");
                         metrics.record(sessionID, "circuit.breaker.trip");
                         // Trip circuit breaker - stop auto-continuing entirely
-                        meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
-                        sessionState.set(sessionID, meta);
+                        setPauseState(sessionID, 'autopilot_max_attempts');
                         log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: meta.autopilotAttempts });
                         return `Guidance request recorded:\n\nQ: ${question}${context ? `\nContext: ${context}` : ""}${options ? `\nOptions: ${options}` : ""}\n\nAutopilot limit reached. Auto-continue paused.`;
                     }
@@ -55,7 +54,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                         });
 
                         meta.awaitingGuidance = null;
-                        meta.autoContinuePaused = null;
+                        clearPauseState(sessionID);
                         sessionState.set(sessionID, meta);
                         log("info", "Autopilot answer generated", { sessionID, attempts: meta.autopilotAttempts });
                         metrics.record(sessionID, "autopilot.attempt");

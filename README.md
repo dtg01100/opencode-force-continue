@@ -224,12 +224,50 @@ requestGuidance(question='Should I use approach A or B?', context?)
 
 When `FORCE_CONTINUE_AUTOPILOT_ENABLED=true`, the plugin automatically answers `requestGuidance` calls instead of waiting for user input. The AI makes autonomous decisions and continues working.
 
+#### How Autopilot Works
+
+Autopilot operates in a **layered autonomy model** with two key behaviors:
+
+**1. Auto-answering Guidance (Execution Layer)**
+- When the AI calls `requestGuidance`, autopilot automatically generates an answer
+- Uses the prompt: "AUTONOMOUS DECISION REQUIRED" with the guidance question
+- Tracks attempt counts with a circuit breaker (default max: 3 attempts)
+- If max attempts reached, falls back to requiring user input (permanent pause)
+
+**2. Idle-Time Decision Making (Proactive Layer)**
+When a session goes idle, autopilot checks for two conditions before the normal nudge flow:
+
+- **Pending Guidance Resolution**: If there's an unanswered guidance request from earlier, autopilot proactively resolves it by sending an autonomous decision prompt. This ensures old questions don't block progress.
+
+- **AI Question Auto-answering**: If the AI's last message contains a question (detected by `?` + waiting indicators like "should I", "would you", etc.), autopilot auto-answers it to keep work flowing.
+
+If neither autopilot condition applies, the standard nudge flow (continue/escalation/loop-break prompts) executes as a fallback.
+
+#### Session State Management
+
+Autopilot uses a **separated state model**:
+- **Completion State** (terminal): `completed`, `blocked`, `interrupted`, `canceled`, etc. — session is done, no nudges
+- **Pause State** (temporary): `user_paused`, `autopilot_max_attempts`, `max_continuations`, `circuit_breaker` — session paused but could resume
+
+User messages clear both states, allowing work to resume.
+
+#### Configuration
+
+```bash
+FORCE_CONTINUE_AUTOPILOT_ENABLED=true   # Enable autopilot (default: false)
+FORCE_CONTINUE_AUTOPILOT_MAX_ATTEMPTS=3 # Max attempts before fallback (default: 3)
+```
+
 Use cases:
 - Long-running tasks where the AI can reasonably decide on its own
 - Autonomous research mode
 - CI/automated environments without human guidance availability
 
-If max attempts is reached, falls back to normal behavior requiring user input.
+#### Autopilot Tools
+
+- **`setAutopilot`**: Toggle autopilot globally or per-session
+- **`pauseAutoContinue`**: Temporarily pause (sets temporary pause state)
+- Autopilot attempts reset on: user messages, session.created events, or progress detection
 
 ### pauseAutoContinue
 

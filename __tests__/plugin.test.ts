@@ -95,7 +95,9 @@ describe('ContinuePlugin', () => {
 
   const getPaused = async (sessionID: string) => {
     const { readState } = await import('../force-continue.server.js');
-    return readState().sessions[sessionID]?.autoContinuePaused ?? null;
+    const session = readState().sessions[sessionID];
+    // Check new state model first, then fall back to legacy autoContinuePaused
+    return session?.pauseState || session?.completionState || session?.autoContinuePaused || null;
   };
 
   describe('session tracking', () => {
@@ -345,7 +347,7 @@ describe('ContinuePlugin', () => {
         }
       });
 
-      expect(readState().sessions['legacy-args-blocked-session'].autoContinuePaused.reason).toBe('blocked');
+      expect(readState().sessions['legacy-args-blocked-session'].completionState.status).toBe('blocked');
     });
   });
 
@@ -1267,7 +1269,7 @@ describe('autopilot', () => {
       // Circuit breaker should be tripped
       const { readState } = await import('../force-continue.server.js');
       const state = readState();
-      expect(state.sessions['test-session'].autoContinuePaused).toEqual({
+      expect(state.sessions['test-session'].pauseState).toEqual({
         reason: 'autopilot_max_attempts',
         timestamp: expect.any(Number)
       });
@@ -1392,7 +1394,7 @@ describe('autopilot', () => {
       // Circuit breaker should be tripped
       const { readState } = await import('../force-continue.server.js');
       const state = readState();
-      expect(state.sessions['question-fallback-session'].autoContinuePaused).toEqual({
+      expect(state.sessions['question-fallback-session'].pauseState).toEqual({
         reason: 'autopilot_max_attempts',
         timestamp: expect.any(Number)
       });
@@ -1753,7 +1755,7 @@ describe('autopilot', () => {
       const toolDef = plugin.tool.completionSignal;
       await toolDef.execute({ status: 'completed' }, { sessionID: 'task-done-1' } as any);
       const state = (await import('../force-continue.server.js')).readState();
-      expect(state.sessions['task-done-1'].autoContinuePaused.reason).toBe('completed');
+      expect(state.sessions['task-done-1'].completionState.status).toBe('completed');
     });
 
     it('should set autoContinuePaused reason to completed for completed status', async () => {
@@ -1763,7 +1765,7 @@ describe('autopilot', () => {
       const toolDef = plugin.tool.completionSignal;
       await toolDef.execute({ status: 'completed' }, { sessionID: 'task-done-2' } as any);
       const state = (await import('../force-continue.server.js')).readState();
-      expect(state.sessions['task-done-2'].autoContinuePaused.reason).toBe('completed');
+      expect(state.sessions['task-done-2'].completionState.status).toBe('completed');
     });
 
     it('should not pause auto-continue when unfinished tasks remain', async () => {
@@ -2277,8 +2279,8 @@ describe('nudgeDelayMs', () => {
   });
 
   it('should suppress nudge if autoContinuePaused is set during delay', async () => {
-    const { createContinuePlugin } = await import('../force-continue.server.js');
-    const createPlugin = createContinuePlugin({ nudgeDelayMs: 10 });
+    const { createContinuePlugin, readState } = await import('../force-continue.server.js');
+    const createPlugin = createContinuePlugin({ nudgeDelayMs: 50 });
     const plugin = await createPlugin({ client: mockClient });
 
     await plugin['chat.message']({ sessionID: 'suppress-delay' });
@@ -2290,24 +2292,17 @@ describe('nudgeDelayMs', () => {
     // Start the idle event (nudge is delayed via setTimeout)
     const idlePromise = plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'suppress-delay' } } });
 
-    // During the delay, mark the session as paused (simulates completionSignal arriving)
-    await plugin.event({
-      event: {
-        type: 'message.part.updated',
-        properties: {
-          sessionID: 'suppress-delay',
-          part: { type: 'tool', tool: 'completionSignal', state: { status: 'completed' } }
-        }
-      }
-    });
+    // During the delay, directly set completion state (simulates completionSignal arriving)
+    const { sessionState, setCompletionState } = await import('../src/state.js');
+    setCompletionState('suppress-delay', 'completed');
 
     await idlePromise;
 
     // Nudge should have been suppressed because session was paused during delay
     expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
 
-    const state = (await import('../force-continue.server.js')).readState();
-    expect(state.sessions['suppress-delay'].autoContinuePaused).not.toBeNull();
+    const state = readState();
+    expect(state.sessions['suppress-delay'].completionState).not.toBeNull();
   });
 
   it('should still send the max-continuations prompt before pausing', async () => {
@@ -2325,7 +2320,7 @@ describe('nudgeDelayMs', () => {
 
     expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(1);
     expect(mockClient.session.promptAsync.mock.calls[0][0].body.parts[0].text).toContain('AUTO-CONTINUE CAP REACHED');
-    expect(readState().sessions['max-cap-delay-session'].autoContinuePaused).toEqual({
+    expect(readState().sessions['max-cap-delay-session'].pauseState).toEqual({
       reason: 'max_continuations',
       timestamp: expect.any(Number),
     });

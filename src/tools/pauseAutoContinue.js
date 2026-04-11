@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { sessionState } from "../state.js";
+import { setPauseState } from "../state.js";
 
 export function createPauseAutoContinueTool(config, log) {
     return tool({
@@ -11,9 +11,7 @@ export function createPauseAutoContinueTool(config, log) {
         execute: async ({ reason, estimatedTime }, toolCtx) => {
             const sessionID = toolCtx?.sessionID;
             if (sessionID) {
-                const meta = sessionState.get(sessionID) || {};
-                meta.autoContinuePaused = { reason: 'user_paused', estimatedTime, timestamp: Date.now() };
-                sessionState.set(sessionID, meta);
+                setPauseState(sessionID, 'user_paused', { estimatedTime });
                 log("info", "Auto-continue paused", { sessionID, reason });
             }
             return `Auto-continue paused${reason ? `: ${reason}` : ""}.${estimatedTime ? ` Estimated time: ${estimatedTime}.` : ""}\nCall completionSignal or send a message to resume.`;

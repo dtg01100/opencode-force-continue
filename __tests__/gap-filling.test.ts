@@ -1060,7 +1060,8 @@ describe('completionSignal with args.status variants', () => {
     });
 
     const state = readState();
-    expect(state.sessions['args-blocked-session'].autoContinuePaused).not.toBeNull();
+    expect(state.sessions['args-blocked-session'].completionState).not.toBeNull();
+    expect(state.sessions['args-blocked-session'].completionState.status).toBe('blocked');
   });
 
   it('should mark session paused when part status has args.status=interrupted', async () => {
@@ -1084,7 +1085,8 @@ describe('completionSignal with args.status variants', () => {
     });
 
     const state = readState();
-    expect(state.sessions['args-interrupted-session'].autoContinuePaused).not.toBeNull();
+    expect(state.sessions['args-interrupted-session'].completionState).not.toBeNull();
+    expect(state.sessions['args-interrupted-session'].completionState.status).toBe('interrupted');
   });
 });
 

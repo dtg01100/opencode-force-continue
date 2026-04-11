@@ -8,6 +8,41 @@ let cleanupInterval = null;
 let sessionTtlExplicitlySet = false;
 
 /**
+ * Terminal completion state reasons.
+ * These indicate the session has reached a terminal state and should not be nudged.
+ */
+const TERMINAL_COMPLETION_REASONS = new Set([
+    'completed', 'blocked', 'interrupted',
+    'canceled', 'cancelled', 'aborted', 'stopped'
+]);
+
+/**
+ * Temporary pause state reasons.
+ * These indicate the session is temporarily paused but could resume.
+ */
+const TEMPORARY_PAUSE_REASONS = new Set([
+    'user_paused', 'autopilot_max_attempts', 'max_continuations', 'circuit_breaker'
+]);
+
+/**
+ * Check if session is in a terminal completion state.
+ * @param {object} meta - Session metadata
+ * @returns {boolean}
+ */
+function checkTerminalCompletion(meta) {
+    return !!(meta?.completionState);
+}
+
+/**
+ * Check if session is in a temporary pause state.
+ * @param {object} meta - Session metadata
+ * @returns {boolean}
+ */
+function checkTemporarilyPaused(meta) {
+    return !!(meta?.pauseState);
+}
+
+/**
  * Configure the session TTL (time-to-live).
  * @param {number} ttlMs - TTL in milliseconds
  */
@@ -36,7 +71,7 @@ export function cleanupExpiredSessions() {
     
     for (const [sessionID, meta] of sessionState.entries()) {
         // Skip sessions that are complete - they should be cleaned up via session.deleted
-        if (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed') {
+        if (checkTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed')) {
             continue;
         }
         
@@ -98,7 +133,7 @@ export function getActiveSessionCount() {
     let activeCount = 0;
     const now = Date.now();
     for (const [, meta] of sessionState.entries()) {
-        if (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed') {
+        if (checkTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed')) {
             continue;
         }
         const lastSeen = meta.lastSeen || meta.sessionStartedAt || 0;
@@ -174,6 +209,96 @@ export function isTaskDone(status) {
     if (typeof status !== "string") return false;
     const normalized = status.trim().toLowerCase();
     return normalized === "done" || normalized === "completed" || normalized === "complete";
+}
+
+/**
+ * Set terminal completion state for a session.
+ * @param {string} sessionID
+ * @param {string} status - One of: completed, blocked, interrupted, canceled, cancelled, aborted, stopped
+ * @param {object} extra - Optional extra fields (e.g., reason details)
+ */
+export function setCompletionState(sessionID, status, extra = {}) {
+    if (!TERMINAL_COMPLETION_REASONS.has(status)) {
+        throw new Error(`Invalid completion state: ${status}. Must be one of: ${[...TERMINAL_COMPLETION_REASONS].join(', ')}`);
+    }
+    const meta = sessionState.get(sessionID) || {};
+    meta.completionState = { status, timestamp: Date.now(), ...extra };
+    // Clear any temporary pause state when entering terminal completion
+    meta.pauseState = null;
+    sessionState.set(sessionID, meta);
+}
+
+/**
+ * Set temporary pause state for a session.
+ * @param {string} sessionID
+ * @param {string} reason - One of: user_paused, autopilot_max_attempts, max_continuations, circuit_breaker
+ * @param {object} extra - Optional extra fields (e.g., estimatedTime)
+ */
+export function setPauseState(sessionID, reason, extra = {}) {
+    if (!TEMPORARY_PAUSE_REASONS.has(reason)) {
+        throw new Error(`Invalid pause reason: ${reason}. Must be one of: ${[...TEMPORARY_PAUSE_REASONS].join(', ')}`);
+    }
+    const meta = sessionState.get(sessionID) || {};
+    meta.pauseState = { reason, timestamp: Date.now(), ...extra };
+    sessionState.set(sessionID, meta);
+}
+
+/**
+ * Clear temporary pause state without affecting completion state.
+ * @param {string} sessionID
+ */
+export function clearPauseState(sessionID) {
+    const meta = sessionState.get(sessionID);
+    if (!meta) return;
+    meta.pauseState = null;
+    sessionState.set(sessionID, meta);
+}
+
+/**
+ * Clear terminal completion state (only done when user explicitly resumes).
+ * @param {string} sessionID
+ */
+export function clearCompletionState(sessionID) {
+    const meta = sessionState.get(sessionID);
+    if (!meta) return;
+    meta.completionState = null;
+    sessionState.set(sessionID, meta);
+}
+
+/**
+ * Check if session is in a terminal completion state.
+ * @param {object} meta - Session metadata
+ * @returns {boolean}
+ */
+export function isTerminalCompletion(meta) {
+    return checkTerminalCompletion(meta);
+}
+
+/**
+ * Check if session is in a temporary pause state.
+ * @param {object} meta - Session metadata
+ * @returns {boolean}
+ */
+export function isTemporarilyPaused(meta) {
+    return checkTemporarilyPaused(meta);
+}
+
+/**
+ * Get the pause reason if session is temporarily paused.
+ * @param {object} meta - Session metadata
+ * @returns {string|null}
+ */
+export function getPauseReason(meta) {
+    return meta?.pauseState?.reason || null;
+}
+
+/**
+ * Get the completion status if session is in completion state.
+ * @param {object} meta - Session metadata
+ * @returns {string|null}
+ */
+export function getCompletionStatus(meta) {
+    return meta?.completionState?.status || null;
 }
 
 export function isSubagentSession(sessionID) {

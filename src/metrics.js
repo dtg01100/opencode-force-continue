@@ -22,6 +22,8 @@ function createMetricsTracker() {
         totalLastMsgNotAssistant: 0,
         totalAutopilotAttempts: 0,
         totalAutopilotFallbacks: 0,
+        totalAutopilotGuidanceResolutions: 0,
+        totalAutopilotGuidanceFallbacks: 0,
         promptContinue: 0,
         promptEscalation: 0,
         promptLoopBreak: 0,
@@ -65,6 +67,8 @@ function createMetricsTracker() {
                 case "autopilot.fallback": metrics.totalAutopilotFallbacks++; break;
                 case "autopilot.fallback.question": metrics.totalAutopilotFallbacks++; break;
                 case "autopilot.question.attempt": metrics.totalAutopilotAttempts++; break;
+                case "autopilot.guidance.resolution": metrics.totalAutopilotGuidanceResolutions++; break;
+                case "autopilot.fallback.guidance": metrics.totalAutopilotGuidanceFallbacks++; break;
                 case "completion.with.unfinished.tasks": break;
             }
         },
@@ -91,6 +95,8 @@ function createMetricsTracker() {
             metrics.totalLastMsgNotAssistant = 0;
             metrics.totalAutopilotAttempts = 0;
             metrics.totalAutopilotFallbacks = 0;
+            metrics.totalAutopilotGuidanceResolutions = 0;
+            metrics.totalAutopilotGuidanceFallbacks = 0;
             metrics.promptContinue = 0;
             metrics.promptEscalation = 0;
             metrics.promptLoopBreak = 0;
@@ -127,6 +133,8 @@ function createMetricsTracker() {
                 lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
                 totalAutopilotAttempts: metrics.totalAutopilotAttempts,
                 totalAutopilotFallbacks: metrics.totalAutopilotFallbacks,
+                totalAutopilotGuidanceResolutions: metrics.totalAutopilotGuidanceResolutions,
+                totalAutopilotGuidanceFallbacks: metrics.totalAutopilotGuidanceFallbacks,
                 promptContinue: metrics.promptContinue,
                 promptEscalation: metrics.promptEscalation,
                 promptLoopBreak: metrics.promptLoopBreak,

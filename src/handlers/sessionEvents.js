@@ -1,5 +1,5 @@
-import { sessionState, updateLastSeen, isTaskDone, isSubagentSession, consumeNextSessionAutopilotEnabled } from "../state.js";
-import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt } from "../autopilot.js";
+import { sessionState, updateLastSeen, isTaskDone, isSubagentSession, consumeNextSessionAutopilotEnabled, setCompletionState, setPauseState, clearPauseState, isTerminalCompletion, isTemporarilyPaused, getPauseReason, getCompletionStatus } from "../state.js";
+import { getAutopilotEnabled, getAutopilotMaxAttempts, buildAutopilotPrompt, getAutopilotDecision, runAutopilotStep } from "../autopilot.js";
 import { getUnfinishedTasks } from "../utils.js";
 
 function resolveSessionID(event) {
@@ -219,70 +219,29 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             // Check if AI asked a question and is waiting for user input
             const aiAskedQuestion = containsQuestion(contextText);
-            const autopilotEnabled = getAutopilotEnabled(config, sessionID);
 
-            // Autopilot: resolve pending guidance autonomously if present
-            if (autopilotEnabled && meta.awaitingGuidance && !aiAskedQuestion) {
-                const pending = meta.awaitingGuidance;
-                const currentAttempts = (meta.autopilotAttempts || 0) + 1;
-                const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
+            // Autopilot decision layer: check if autopilot should take action
+            const decision = getAutopilotDecision(meta, config, sessionID, aiAskedQuestion);
+            const autopilotAction = await runAutopilotStep(decision, {
+                sessionState,
+                client,
+                log,
+                metricsTracker,
+                config,
+                sendPrompt,
+                extractQuestions,
+                buildAutopilotPrompt
+            }, sessionID, contextText);
 
-                if (currentAttempts > autopilotMaxAttempts) {
-                    log("info", "Autopilot max guidance attempts reached, pausing", { sessionID });
-                    metricsTracker.record(sessionID, "autopilot.fallback.guidance");
-                    meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
-                    sessionState.set(sessionID, meta);
-                    return;
-                }
-
-                meta.autopilotAttempts = currentAttempts;
-                sessionState.set(sessionID, meta);
-
-                const prompt = buildAutopilotPrompt(
-                    pending.question,
-                    pending.context,
-                    pending.options
-                );
-                metricsTracker.record(sessionID, "autopilot.guidance.resolution");
-                log("info", "Autopilot resolving pending guidance", { sessionID, question: pending.question });
-                await sendPrompt(sessionID, prompt);
+            if (autopilotAction) {
+                // Autopilot took action, don't proceed with nudge
                 return;
             }
 
+            // If autopilot didn't take action but AI asked a question, skip nudge
             if (aiAskedQuestion) {
-                if (autopilotEnabled) {
-                    // Autopilot: AI asked a question, auto-answer it
-                    const questions = extractQuestions(contextText);
-                    const questionText = questions.length > 0 ? questions.join(' ') : contextText;
-                    const currentAttempts = (meta.autopilotAttempts || 0) + 1;
-                    meta.autopilotAttempts = currentAttempts;
-                    const autopilotMaxAttempts = getAutopilotMaxAttempts(config);
-
-                    if (currentAttempts > autopilotMaxAttempts) {
-                        log("info", "Autopilot max question attempts reached, tripping circuit breaker", { sessionID });
-                        metricsTracker.record(sessionID, "autopilot.fallback.question");
-                        metricsTracker.record(sessionID, "circuit.breaker.trip");
-                        // Trip circuit breaker - stop auto-continuing entirely
-                        meta.autoContinuePaused = { reason: 'autopilot_max_attempts', timestamp: Date.now() };
-                        sessionState.set(sessionID, meta);
-                        log("warn", "Circuit breaker tripped: autopilot max attempts exceeded", { sessionID, attempts: currentAttempts });
-                        return;
-                    } else {
-                        sessionState.set(sessionID, meta);
-                        const prompt = buildAutopilotPrompt(
-                            `You asked: ${questionText}`,
-                            `Your last response suggested you were waiting for an answer.`,
-                            "Choose a reasonable answer and proceed with your work."
-                        );
-                        metricsTracker.record(sessionID, "autopilot.question.attempt");
-                        log("info", "Autopilot answering AI question", { sessionID, questions });
-                        await sendPrompt(sessionID, prompt);
-                    }
-                } else {
-                    // Autopilot disabled - AI is genuinely waiting for user input, don't nudge
-                    metricsTracker.record(sessionID, "idle.skipped.awaiting.answer");
-                    log("info", "Idle skipped: AI asked a question and autopilot is disabled", { sessionID });
-                }
+                metricsTracker.record(sessionID, "idle.skipped.awaiting.answer");
+                log("info", "Idle skipped: AI asked a question and autopilot did not auto-answer", { sessionID });
                 return;
             }
 
@@ -294,8 +253,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             if (meta.continuationCount >= config.maxContinuations) {
                 metricsTracker.record(sessionID, "escalation");
                 metricsTracker.record(sessionID, "prompt.escalation");
-                meta.autoContinuePaused = { reason: 'max_continuations', timestamp: Date.now() };
-                sessionState.set(sessionID, meta);
+                setPauseState(sessionID, 'max_continuations');
                 const msg = buildEscalationPrompt(meta.continuationCount, taskSummary, contextText, inLoop, config);
                 log("warn", "Auto-continue cap reached, pausing further continuations", { sessionID, count: meta.continuationCount });
                 await sendPrompt(sessionID, msg, { allowPausedReason: 'max_continuations' });
@@ -327,8 +285,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             sessionState.set(sessionID, meta);
             if (meta.errorCount >= config.circuitBreakerThreshold) {
                 metricsTracker.record(sessionID, "circuit.breaker.trip");
-                meta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
-                sessionState.set(sessionID, meta);
+                setPauseState(sessionID, 'circuit_breaker');
                 log("warn", "Circuit breaker tripped after error", { sessionID, errorCount: meta.errorCount });
             }
             metricsTracker.record(sessionID, "error");
@@ -346,11 +303,13 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
             const meta = sessionState.get(sessionID);
-            if (meta?.autoContinuePaused) {
-                if (meta.autoContinuePaused.reason === options.allowPausedReason) {
+            const pauseReason = meta?.pauseState?.reason || meta?.autoContinuePaused?.reason;
+            const completionStatus = meta?.completionState?.status;
+            if (completionStatus || pauseReason) {
+                if (pauseReason === options.allowPausedReason) {
                     // Allow the prompt that established this paused state to land.
                 } else {
-                    log("debug", "nudge suppressed after delay", { sessionID, reason: meta.autoContinuePaused.reason });
+                    log("debug", "nudge suppressed after delay", { sessionID, reason: completionStatus || pauseReason });
                     return;
                 }
             }
@@ -376,8 +335,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
                 if (currentMeta.errorCount >= config.circuitBreakerThreshold) {
                     metricsTracker.record(sessionID, "circuit.breaker.trip");
-                    currentMeta.autoContinuePaused = { reason: 'circuit_breaker', timestamp: Date.now() };
-                    sessionState.set(sessionID, currentMeta);
+                    setPauseState(sessionID, 'circuit_breaker');
                     log("warn", "Circuit breaker tripped after prompt error", { sessionID, errorCount: currentMeta.errorCount });
                 }
             } catch (innerErr) {
@@ -403,6 +361,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 meta.continuationCount = 0;
                 meta.toolCallHistory = [];
                 meta.errorCount = 0;
+                // Clear both new and legacy pause/completion states
+                meta.pauseState = null;
+                meta.completionState = null;
                 meta.autoContinuePaused = null;
                 meta.sessionStartedAt = Date.now();
                 sessionState.set(sessionID, meta);
@@ -421,10 +382,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 const args = part.state?.input || part.state?.args || {};
                 const status = (args.status || "completed").toLowerCase();
                 if (status === "completed" || status === "blocked" || status === "interrupted") {
-                    const meta = sessionState.get(sessionID) || {};
-                    meta.autoContinuePaused = { reason: status, timestamp: Date.now() };
-                    sessionState.set(sessionID, meta);
+                    setCompletionState(sessionID, status);
                     if (config.enableCompletionSummary) {
+                        const meta = sessionState.get(sessionID) || {};
                         const summary = {
                             continuations: meta.continuationCount || 0,
                             filesModified: meta.filesModified ? [...meta.filesModified] : [],
@@ -438,9 +398,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
             const partStatus = part?.state?.status;
             if (partStatus === "canceled" || partStatus === "cancelled" || partStatus === "interrupted" || partStatus === "aborted" || partStatus === "stopped") {
-                const meta = sessionState.get(sessionID) || {};
-                meta.autoContinuePaused = { reason: partStatus, timestamp: Date.now() };
-                sessionState.set(sessionID, meta);
+                setCompletionState(sessionID, partStatus);
                 log("debug", "part canceled/interrupted, suppressing nudges", { sessionID, partStatus });
             }
             return;
@@ -458,13 +416,15 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
 
-            if (meta.autoContinuePaused) {
-                if (meta.autoContinuePaused.reason === "completed") {
-                    metricsTracker.record(sessionID, "idle.skipped.complete");
-                } else {
-                    metricsTracker.record(sessionID, "idle.skipped.paused");
-                }
-                log("debug", "idle skipped: auto-continue paused", { sessionID });
+            if (isTerminalCompletion(meta) || getCompletionStatus(meta) === "completed" || (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed")) {
+                metricsTracker.record(sessionID, "idle.skipped.complete");
+                log("debug", "idle skipped: session completed", { sessionID });
+                return;
+            }
+
+            if (isTemporarilyPaused(meta) || (meta.autoContinuePaused && !['completed', 'blocked', 'interrupted'].includes(meta.autoContinuePaused.reason))) {
+                metricsTracker.record(sessionID, "idle.skipped.paused");
+                log("debug", "idle skipped: session temporarily paused", { sessionID });
                 return;
             }
 

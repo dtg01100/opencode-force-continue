@@ -24,9 +24,14 @@ describe('state machine validation', () => {
     vi.resetModules();
   });
 
-  const getPaused = async (sessionID: string) => {
+  const getCompletionState = async (sessionID: string) => {
     const { readState } = await import('../force-continue.server.js');
-    return readState().sessions[sessionID]?.autoContinuePaused ?? null;
+    return readState().sessions[sessionID]?.completionState ?? null;
+  };
+
+  const getPauseState = async (sessionID: string) => {
+    const { readState } = await import('../force-continue.server.js');
+    return readState().sessions[sessionID]?.pauseState ?? null;
   };
 
   describe('session lifecycle', () => {
@@ -41,7 +46,8 @@ describe('state machine validation', () => {
 
       const state = readState();
       expect(state.sessions['lifecycle-1']).toBeDefined();
-      expect(state.sessions['lifecycle-1'].autoContinuePaused).toBeNull();
+      expect(state.sessions['lifecycle-1'].completionState).toBeNull();
+      expect(state.sessions['lifecycle-1'].pauseState).toBeNull();
     });
 
     it('should initialize state on chat.message', async () => {
@@ -79,7 +85,7 @@ describe('state machine validation', () => {
       const plugin = await createPlugin(mockCtx);
 
       await plugin['chat.message']({ sessionID: 'pause-1' });
-      expect(await getPaused('pause-1')).toBeNull();
+      expect(await getCompletionState('pause-1')).toBeNull();
 
       await plugin.event({
         event: {
@@ -91,9 +97,9 @@ describe('state machine validation', () => {
         }
       });
 
-      const paused = await getPaused('pause-1');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('completed');
+      const state = await getCompletionState('pause-1');
+      expect(state).not.toBeNull();
+      expect(state.status).toBe('completed');
     });
 
     it('should transition from null to blocked on completionSignal blocked', async () => {
@@ -112,9 +118,9 @@ describe('state machine validation', () => {
         }
       });
 
-      const paused = await getPaused('pause-2');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('blocked');
+      const state = await getCompletionState('pause-2');
+      expect(state).not.toBeNull();
+      expect(state.status).toBe('blocked');
     });
 
     it('should transition from null to interrupted on completionSignal interrupted', async () => {
@@ -133,9 +139,9 @@ describe('state machine validation', () => {
         }
       });
 
-      const paused = await getPaused('pause-3');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('interrupted');
+      const state = await getCompletionState('pause-3');
+      expect(state).not.toBeNull();
+      expect(state.status).toBe('interrupted');
     });
 
     it('should transition from null to circuit_breaker on threshold errors', async () => {
@@ -151,9 +157,9 @@ describe('state machine validation', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pause-4' } } });
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pause-4' } } });
 
-      const paused = await getPaused('pause-4');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('circuit_breaker');
+      const state = await getPauseState('pause-4');
+      expect(state).not.toBeNull();
+      expect(state.reason).toBe('circuit_breaker');
     });
 
     it('should transition to max_continuations at cap', async () => {
@@ -168,9 +174,9 @@ describe('state machine validation', () => {
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pause-5' } } });
       await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pause-5' } } });
 
-      const paused = await getPaused('pause-5');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('max_continuations');
+      const state = await getPauseState('pause-5');
+      expect(state).not.toBeNull();
+      expect(state.reason).toBe('max_continuations');
     });
 
     it('should transition from null to user_paused on pauseAutoContinue', async () => {
@@ -182,9 +188,9 @@ describe('state machine validation', () => {
       const toolDef = plugin.tool.pauseAutoContinue;
       await toolDef.execute({ reason: 'Need time' }, { sessionID: 'pause-6' } as any);
 
-      const paused = await getPaused('pause-6');
-      expect(paused).not.toBeNull();
-      expect(paused.reason).toBe('user_paused');
+      const state = await getPauseState('pause-6');
+      expect(state).not.toBeNull();
+      expect(state.reason).toBe('user_paused');
     });
 
     it('should clear paused state when user responds after completion', async () => {
@@ -203,9 +209,9 @@ describe('state machine validation', () => {
         }
       });
 
-      expect(await getPaused('pause-7')).not.toBeNull();
+      expect(await getCompletionState('pause-7')).not.toBeNull();
       await plugin['chat.message']({ sessionID: 'pause-7' });
-      expect(await getPaused('pause-7')).toBeNull();
+      expect(await getCompletionState('pause-7')).toBeNull();
     });
   });
 

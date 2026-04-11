@@ -13,8 +13,11 @@ export function createMessagesTransformHandler() {
         if (!resolvedSessionID) return;
 
         const meta = sessionState.get(resolvedSessionID);
-        const pauseReason = meta?.autoContinuePaused?.reason;
-        if (pauseReason !== "completed" && pauseReason !== "blocked" && pauseReason !== "interrupted") return;
+        const tempPauseReason = meta?.pauseState?.reason || meta?.autoContinuePaused?.reason;
+        const completionStatus = meta?.completionState?.status;
+        // Check if session is in a terminal state (completionState or legacy autoContinuePaused with terminal reason)
+        const isTerminal = completionStatus || (tempPauseReason && ['completed', 'blocked', 'interrupted'].includes(tempPauseReason));
+        if (!isTerminal) return;
 
         // SDK Message type is UserMessage | AssistantMessage (no system role).
         // Use assistant role to inject the completion note.
