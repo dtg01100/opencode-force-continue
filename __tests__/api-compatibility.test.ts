@@ -191,6 +191,13 @@ describe('OpenCode API compatibility', () => {
       expect(serverModule.ContinuePlugin).toBe(serverModule.default.server);
     });
 
+    it('default export should expose tui for TUI loading', async () => {
+      const serverModule = await import('../force-continue.server.js');
+
+      expect(serverModule.default).toHaveProperty('tui');
+      expect(typeof serverModule.default.tui).toBe('function');
+    });
+
     it('should not keep a Node process alive on import alone', () => {
       const result = spawnSync(
         process.execPath,

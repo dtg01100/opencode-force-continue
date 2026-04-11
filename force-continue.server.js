@@ -5,4 +5,4 @@ import { tui } from "./force-continue.tui.js";
 
 export { tui };
 
-export default { id, server: ContinuePlugin };
+export default { id, server: ContinuePlugin, tui };
