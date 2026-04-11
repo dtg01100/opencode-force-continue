@@ -14,13 +14,14 @@ describe('TUI refresh on toggle', () => {
 
     let getCommandsFn: (() => any[]) | null = null;
     let registerCalls = 0;
+    let disposeCalls = 0;
 
     const mockApi: any = {
       command: {
         register: (fn: any) => {
           registerCalls++;
           getCommandsFn = fn;
-          return () => {};
+          return () => { disposeCalls++; };
         },
       },
       ui: {
@@ -39,7 +40,9 @@ describe('TUI refresh on toggle', () => {
 
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
 
+    // Callback registrations should not be replaced during toggle.
     expect(registerCalls).toBe(1);
+    expect(disposeCalls).toBe(0);
     expect(getCommandsFn!()[0].title).toBe('Disable Autopilot');
   });
 
@@ -48,6 +51,8 @@ describe('TUI refresh on toggle', () => {
 
     let registeredCommands: any[] | null = null;
     let registerCalls = 0;
+    let disposeCalls = 0;
+    const registrationHistory: any[][] = [];
 
     const mockApi: any = {
       command: {
@@ -57,7 +62,8 @@ describe('TUI refresh on toggle', () => {
             throw new Error('callback not supported');
           }
           registeredCommands = value;
-          return () => {};
+          registrationHistory.push(value);
+          return () => { disposeCalls++; };
         },
       },
       ui: {
@@ -71,11 +77,111 @@ describe('TUI refresh on toggle', () => {
     await tui(mockApi);
     expect(registerCalls).toBe(2);
     expect(registeredCommands?.[0].title).toBe('Enable Autopilot');
+    expect(registrationHistory).toHaveLength(1);
 
     registeredCommands![0].onSelect();
 
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
     expect(registerCalls).toBe(4);
+    expect(disposeCalls).toBe(1);
+    expect(registrationHistory).toHaveLength(2);
+    expect(registrationHistory[0]).not.toBe(registrationHistory[1]);
     expect(registeredCommands?.[0].title).toBe('Disable Autopilot');
+  });
+
+  it('host-visible command source updates only after re-register in array fallback mode', async () => {
+    const SESSION_ID = 'test-session-3';
+
+    let activeCommands: any[] = [];
+    const commandRegistry: any[][] = [];
+
+    const mockApi: any = {
+      command: {
+        register: (value: any) => {
+          if (typeof value === 'function') {
+            throw new Error('callback not supported');
+          }
+          commandRegistry.push(value);
+          activeCommands = value;
+          return () => {};
+        },
+      },
+      ui: {
+        toast: (_: any) => {},
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    expect(activeCommands[0].title).toBe('Enable Autopilot');
+
+    // Simulate user selecting command from host command list.
+    activeCommands[0].onSelect();
+
+    // Host now sees updated list because plugin re-registered commands.
+    expect(commandRegistry).toHaveLength(2);
+    expect(activeCommands[0].title).toBe('Disable Autopilot');
+  });
+
+  it('host trigger uses last registration for duplicate command values and respects dispose', async () => {
+    const SESSION_ID = 'test-session-4';
+
+    let registrations: { id: number; commands: any[] }[] = [];
+    let nextID = 1;
+    const triggeredTitles: string[] = [];
+
+    const resolveLatestCommand = (value: string) => {
+      for (let i = registrations.length - 1; i >= 0; i--) {
+        const entry = registrations[i];
+        if (!entry) continue;
+        const hit = entry.commands.find((cmd: any) => cmd.value === value);
+        if (hit) return hit;
+      }
+      return undefined;
+    };
+
+    const mockApi: any = {
+      command: {
+        register: (value: any) => {
+          if (typeof value === 'function') {
+            throw new Error('callback not supported');
+          }
+          const id = nextID++;
+          registrations.push({ id, commands: value });
+          return () => {
+            registrations = registrations.filter((entry) => entry.id !== id);
+          };
+        },
+        trigger: (value: string) => {
+          const cmd = resolveLatestCommand(value);
+          if (!cmd) return;
+          triggeredTitles.push(cmd.title);
+          cmd.onSelect?.();
+        },
+      },
+      ui: {
+        toast: (_: any) => {},
+      },
+      route: {
+        current: { name: 'session', params: { sessionID: SESSION_ID } },
+      },
+    };
+
+    await tui(mockApi);
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Enable Autopilot');
+
+    // First trigger should use initial registration and then force a re-register.
+    mockApi.command.trigger('force-continue:autopilot');
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Disable Autopilot');
+
+    // Second trigger must use the latest registration (last-wins), not a stale one.
+    mockApi.command.trigger('force-continue:autopilot');
+    expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Enable Autopilot');
+
+    expect(triggeredTitles).toEqual(['Enable Autopilot', 'Disable Autopilot']);
   });
 });

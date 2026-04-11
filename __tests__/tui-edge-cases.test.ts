@@ -51,6 +51,39 @@ describe('TUI graceful degradation', () => {
     expect(() => commands[0].onSelect()).not.toThrow();
   });
 
+  it('shows "No active session" toast and does not mutate state when route is not a session', async () => {
+    let getCommandsFn: (() => any[]) | null = null;
+    const toastCalls: any[] = [];
+    const beforeSize = sessionState.size;
+    const mockApi: any = {
+      command: {
+        register: (fn: any) => {
+          getCommandsFn = fn;
+          return () => {};
+        },
+      },
+      ui: {
+        toast: (payload: any) => {
+          toastCalls.push(payload);
+        },
+      },
+      route: {
+        current: { name: 'home' },
+      },
+    };
+
+    await tui(mockApi);
+    const commands = getCommandsFn!();
+    commands[0].onSelect();
+
+    expect(toastCalls).toHaveLength(1);
+    expect(toastCalls[0]).toMatchObject({
+      message: 'No active session',
+      variant: 'error',
+    });
+    expect(sessionState.size).toBe(beforeSize);
+  });
+
   it('works when api.command is undefined', async () => {
     const mockApi: any = {
       ui: {
@@ -866,6 +899,27 @@ describe('TUI API contract compliance', () => {
 
     const dispose = mockApi.command.register((() => []) as any);
     expect(typeof dispose).toBe('function');
+  });
+
+  it('register receives a callback provider in normal host mode', async () => {
+    writeAutopilotState({ enabled: false, timestamp: null });
+    let registerArg: any = null;
+    const mockApi: any = {
+      command: {
+        register: (value: any) => {
+          registerArg = value;
+          mockApi._getCommands = value;
+          return () => {};
+        },
+      },
+      ui: { toast: vi.fn() },
+    };
+
+    await tui(mockApi);
+
+    expect(typeof registerArg).toBe('function');
+    expect(Array.isArray(mockApi._getCommands())).toBe(true);
+    expect(mockApi._getCommands()[0].value).toBe('force-continue:autopilot');
   });
 });
 

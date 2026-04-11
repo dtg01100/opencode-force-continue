@@ -4,6 +4,7 @@ import { setAutopilotEnabled, readAutopilotState } from "./src/autopilot.js";
 export const id = "force-continue";
 
 let disposeCommands = [];
+let callbackRegistrationSupported = false;
 
 export const tui = async (api, options, meta) => {
     // Cleanup previous registrations
@@ -11,6 +12,7 @@ export const tui = async (api, options, meta) => {
         if (typeof dispose === "function") dispose();
     }
     disposeCommands = [];
+    callbackRegistrationSupported = false;
 
     const showToast = (props) => {
         if (typeof api.ui?.toast === "function") {
@@ -58,12 +60,15 @@ export const tui = async (api, options, meta) => {
                         variant: newEnabled ? "warning" : "info",
                     });
 
-                    // Re-register commands to update the command list with new state
-                    for (const dispose of disposeCommands) {
-                        if (typeof dispose === "function") dispose();
+                    // If callback registration is not supported, re-register static
+                    // commands so the UI can refresh the command list.
+                    if (!callbackRegistrationSupported) {
+                        for (const dispose of disposeCommands) {
+                            if (typeof dispose === "function") dispose();
+                        }
+                        disposeCommands = [];
+                        registerCommands(getCommands);
                     }
-                    disposeCommands = [];
-                    registerCommands(getCommands);
                 },
 
             },
@@ -77,8 +82,10 @@ export const tui = async (api, options, meta) => {
 
         try {
             const dispose = api.command.register(commandsProvider);
+            callbackRegistrationSupported = true;
             if (typeof dispose === "function") disposeCommands.push(dispose);
         } catch (error) {
+            callbackRegistrationSupported = false;
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
                 const dispose = api.command.register(commands);
