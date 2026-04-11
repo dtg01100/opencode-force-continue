@@ -77,9 +77,13 @@ describe('ContinuePlugin', () => {
   let mockClient: any;
   let mockCtx: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.FORCE_CONTINUE_NUDGE_DELAY_MS = '0';
     vi.resetModules();
+    const { resetAutopilotState } = await import('../src/autopilot.js');
+    const { clearNextSessionAutopilotEnabled } = await import('../src/state.js');
+    resetAutopilotState();
+    clearNextSessionAutopilotEnabled();
     mockClient = {
       session: {
         messages: vi.fn(),
@@ -549,6 +553,42 @@ describe('ContinuePlugin', () => {
       const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
       expect(lastCall.body.parts[0].text).toContain('did not call');
       expect(lastCall.body.parts[0].text).toContain("status='completed'");
+    });
+
+    it('should not send nudge for completion-like assistant question when autopilot is off', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin['chat.message']({ sessionID: 'forgot-signal-question-off' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: "I think this is done. Should I stop here?" }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'forgot-signal-question-off' } } });
+
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+    });
+
+    it('should auto-answer completion-like assistant question when autopilot is on', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin({ autopilotEnabled: true });
+      const plugin = await createPlugin(mockCtx);
+
+      const { writeAutopilotState } = await import('../src/autopilot.js');
+      writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+      await plugin['chat.message']({ sessionID: 'forgot-signal-question-on' });
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: "All done here. Should I stop now?" }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'forgot-signal-question-on' } } });
+
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
+      const lastCall = mockClient.session.promptAsync.mock.calls[mockClient.session.promptAsync.mock.calls.length - 1][0];
+      expect(lastCall.body.parts[0].text).toContain('AUTONOMOUS DECISION REQUIRED');
+      expect(lastCall.body.parts[0].text).toContain('You asked:');
     });
 
     it('should warn about loop when response repeats content from 2+ turns ago', async () => {
