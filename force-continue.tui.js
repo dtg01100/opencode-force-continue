@@ -53,7 +53,7 @@ export const tui = async (api, options, meta) => {
                     if (!sessionID) {
                         setNextSessionAutopilotEnabled(newEnabled);
                         showToast({
-                            message: newEnabled ? "Autopilot enabled for next session" : "Autopilot disabled for next session",
+                            message: `[force-continue] ${newEnabled ? "Autopilot enabled for next session" : "Autopilot disabled for next session"}`,
                             variant: newEnabled ? "warning" : "info",
                         });
                     } else {

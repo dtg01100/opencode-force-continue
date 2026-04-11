@@ -79,7 +79,7 @@ describe('TUI graceful degradation', () => {
 
     expect(toastCalls).toHaveLength(1);
     expect(toastCalls[0]).toMatchObject({
-      message: 'Autopilot enabled for next session',
+      message: expect.stringContaining('Autopilot enabled for next session'),
       variant: 'warning',
     });
     expect(sessionState.size).toBe(beforeSize);
