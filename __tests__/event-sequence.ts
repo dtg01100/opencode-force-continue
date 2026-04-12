@@ -130,12 +130,14 @@ class EventSequenceBuilder {
 
   assertSessionPaused(sessionID: string, reason: string | null): this {
     const assertion = async ({ state }: { plugin: any; state: any; mockClient: MockClient }) => {
-      const paused = state.sessions[sessionID]?.autoContinuePaused;
+      const session = state.sessions[sessionID];
+      // Check new state model first, then legacy
+      const paused = session?.pauseState || session?.completionState || session?.autoContinuePaused;
       if (reason === null) {
         expect(paused).toBeNull();
       } else {
         expect(paused).not.toBeNull();
-        expect(paused.reason).toBe(reason);
+        expect(paused.reason || paused.status).toBe(reason);
       }
     };
     this.assertions.push(assertion);

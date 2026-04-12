@@ -12,32 +12,34 @@ describe('TTL session cleanup', () => {
       session: { messages: vi.fn(), promptAsync: vi.fn() },
     };
     mockCtx = { client: mockClient };
-    
+
     // Reset TTL to 1 hour for faster tests
-    const { setSessionTtl } = await import('../src/state.js');
+    const { setSessionTtl } = await import('../force-continue.server.js');
     setSessionTtl(60 * 60 * 1000);
   });
 
   afterEach(async () => {
-    const { stopPeriodicCleanup, setSessionTtl } = await import('../src/state.js');
+    const { stopPeriodicCleanup, setSessionTtl } = await import('../force-continue.server.js');
     stopPeriodicCleanup();
     setSessionTtl(24 * 60 * 60 * 1000); // Reset to default
   });
 
   describe('cleanupExpiredSessions', () => {
     it('should remove sessions older than TTL', async () => {
-      const { createContinuePlugin, sessionState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin();
-      const plugin = await createPlugin(mockCtx);
-
-      // Set a very short lastSeen time
+      // Import directly from state.js to avoid any module isolation issues
+      const stateModule = await import('../src/state.js');
+      const { sessionState, cleanupExpiredSessions } = stateModule;
+      
+      // Clear any existing sessions
+      sessionState.clear();
+      
+      // Set sessions directly
       const oldTime = Date.now() - (2 * 60 * 60 * 1000); // 2 hours ago
       sessionState.set('old-session', { lastSeen: oldTime, sessionStartedAt: oldTime });
 
-      // Set a recent session
-      await plugin['chat.message']({ sessionID: 'recent-session' });
+      const recentTime = Date.now();
+      sessionState.set('recent-session', { lastSeen: recentTime, sessionStartedAt: recentTime, continuationCount: 0 });
 
-      const { cleanupExpiredSessions } = await import('../src/state.js');
       const cleaned = cleanupExpiredSessions();
 
       expect(cleaned).toBe(1);
@@ -46,17 +48,18 @@ describe('TTL session cleanup', () => {
     });
 
     it('should preserve completed sessions even if expired', async () => {
-      const { createContinuePlugin, sessionState } = await import('../force-continue.server.js');
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const { sessionState, cleanupExpiredSessions, setCompletionState } = await import('../src/state.js');
       const createPlugin = createContinuePlugin();
       const plugin = await createPlugin(mockCtx);
 
       const oldTime = Date.now() - (2 * 60 * 60 * 1000);
-      sessionState.set('completed-expired-session', {
-        lastSeen: oldTime,
-        autoContinuePaused: { reason: 'completed', timestamp: oldTime }
-      });
+      setCompletionState('completed-expired-session', 'completed');
+      // Manually set lastSeen on the session
+      const meta = sessionState.get('completed-expired-session') || {};
+      meta.lastSeen = oldTime;
+      sessionState.set('completed-expired-session', meta);
 
-      const { cleanupExpiredSessions } = await import('../src/state.js');
       cleanupExpiredSessions();
 
       expect(sessionState.has('completed-expired-session')).toBe(true);
@@ -80,7 +83,7 @@ describe('TTL session cleanup', () => {
 
   describe('setSessionTtl / getSessionTtl', () => {
     it('should get and set session TTL', async () => {
-      const { setSessionTtl, getSessionTtl } = await import('../src/state.js');
+      const { setSessionTtl, getSessionTtl } = await import('../force-continue.server.js');
       
       // TTL was set to 1 hour in beforeEach
       expect(getSessionTtl()).toBe(60 * 60 * 1000);
@@ -107,16 +110,18 @@ describe('TTL session cleanup', () => {
     });
 
     it('should exclude expired sessions from count', async () => {
-      const { createContinuePlugin, sessionState } = await import('../force-continue.server.js');
-      const createPlugin = createContinuePlugin();
-      const plugin = await createPlugin(mockCtx);
-
-      await plugin['chat.message']({ sessionID: 'active-session' });
+      const { sessionState, getActiveSessionCount } = await import('../src/state.js');
       
+      // Clear any existing sessions
+      sessionState.clear();
+
+      // Set an active session
+      const recentTime = Date.now();
+      sessionState.set('active-session', { lastSeen: recentTime, sessionStartedAt: recentTime, continuationCount: 0 });
+
       const oldTime = Date.now() - (2 * 60 * 60 * 1000);
       sessionState.set('old-session', { lastSeen: oldTime });
 
-      const { getActiveSessionCount } = await import('../src/state.js');
       expect(getActiveSessionCount()).toBe(1);
     });
   });

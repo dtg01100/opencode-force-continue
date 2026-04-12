@@ -2279,6 +2279,8 @@ describe('nudgeDelayMs', () => {
   });
 
   it('should suppress nudge if autoContinuePaused is set during delay', async () => {
+    // Import state.js first to ensure we're using the same instance as the plugin
+    const { sessionState, setCompletionState } = await import('../src/state.js');
     const { createContinuePlugin, readState } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin({ nudgeDelayMs: 50 });
     const plugin = await createPlugin({ client: mockClient });
@@ -2293,7 +2295,6 @@ describe('nudgeDelayMs', () => {
     const idlePromise = plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'suppress-delay' } } });
 
     // During the delay, directly set completion state (simulates completionSignal arriving)
-    const { sessionState, setCompletionState } = await import('../src/state.js');
     setCompletionState('suppress-delay', 'completed');
 
     await idlePromise;

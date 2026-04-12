@@ -256,7 +256,7 @@ describe('autopilot circuit breaker on AI questions during idle', () => {
     expect(mockClient.session.promptAsync).toHaveBeenCalledTimes(2);
 
     const state = readState();
-    expect(state.sessions['idle-question-session'].autoContinuePaused).toEqual({
+    expect(state.sessions['idle-question-session'].pauseState).toEqual({
       reason: 'autopilot_max_attempts',
       timestamp: expect.any(Number),
     });
