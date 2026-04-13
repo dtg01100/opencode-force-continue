@@ -42,14 +42,16 @@ describe('TUI refresh on toggle', () => {
 
     await tui(mockApi);
     expect(registerCalls).toBe(1);
-    expect(resolveCommands(registeredCommands)[0].title).toBe('Enable Autopilot');
+    expect(resolveCommands(registeredCommands)[0].title).toBe('Toggle Autopilot');
+    expect(resolveCommands(registeredCommands)[0].description).toContain('Autopilot is OFF');
 
     resolveCommands(registeredCommands)[0].onSelect();
 
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
     expect(registerCalls).toBe(1);
     expect(disposeCalls).toBe(0);
-    expect(resolveCommands(registeredCommands)[0].title).toBe('Disable Autopilot');
+    expect(resolveCommands(registeredCommands)[0].title).toBe('Toggle Autopilot');
+    expect(resolveCommands(registeredCommands)[0].description).toContain('Autopilot is ON');
   });
 
   it('returns fresh command state after toggle', async () => {
@@ -77,13 +79,14 @@ describe('TUI refresh on toggle', () => {
     await tui(mockApi);
     const initialCommands = resolveCommands(registeredCommands);
     expect(registerCalls).toBe(1);
-    expect(initialCommands[0].title).toBe('Enable Autopilot');
+    expect(initialCommands[0].title).toBe('Toggle Autopilot');
+    expect(initialCommands[0].description).toContain('Autopilot is OFF');
 
     initialCommands[0].onSelect();
 
     const refreshedCommands = resolveCommands(registeredCommands);
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
-    expect(refreshedCommands[0].title).toBe('Disable Autopilot');
+    expect(refreshedCommands[0].title).toBe('Toggle Autopilot');
     expect(refreshedCommands[0].description).toContain('Autopilot is ON');
   });
 
@@ -110,12 +113,14 @@ describe('TUI refresh on toggle', () => {
     };
 
     await tui(mockApi);
-    expect(resolveCommands(activeCommandsSource)[0].title).toBe('Enable Autopilot');
+    expect(resolveCommands(activeCommandsSource)[0].title).toBe('Toggle Autopilot');
+    expect(resolveCommands(activeCommandsSource)[0].description).toContain('Autopilot is OFF');
 
     resolveCommands(activeCommandsSource)[0].onSelect();
 
     expect(commandRegistry).toHaveLength(1);
-    expect(resolveCommands(activeCommandsSource)[0].title).toBe('Disable Autopilot');
+    expect(resolveCommands(activeCommandsSource)[0].title).toBe('Toggle Autopilot');
+    expect(resolveCommands(activeCommandsSource)[0].description).toContain('Autopilot is ON');
   });
 
   it('host trigger uses the latest command view', async () => {
@@ -160,16 +165,19 @@ describe('TUI refresh on toggle', () => {
     };
 
     await tui(mockApi);
-    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Enable Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Toggle Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is OFF');
 
     mockApi.command.trigger('force-continue:autopilot');
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
-    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Disable Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Toggle Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is ON');
 
     mockApi.command.trigger('force-continue:autopilot');
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
-    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Enable Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Toggle Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is OFF');
 
-    expect(triggeredTitles).toEqual(['Enable Autopilot', 'Disable Autopilot']);
+    expect(triggeredTitles).toEqual(['Toggle Autopilot', 'Toggle Autopilot']);
   });
 });

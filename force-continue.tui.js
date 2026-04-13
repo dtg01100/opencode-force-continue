@@ -43,12 +43,17 @@ export const tui = async (api, options, meta) => {
         const state = { enabled };
         return [
             {
-                title: state.enabled ? "Disable Autopilot" : "Enable Autopilot",
+                title: "Toggle Autopilot",
                 value: "force-continue:autopilot",
                 description: state.enabled
-                    ? "Autopilot is ON - AI makes decisions autonomously"
-                    : "Autopilot is OFF - AI asks for guidance",
+                    ? "Autopilot is ON - select to disable autonomous decisions"
+                    : "Autopilot is OFF - select to enable autonomous decisions",
                 category: "Force Continue",
+                suggested: true,
+                slash: {
+                    name: "autopilot",
+                    aliases: ["toggle-autopilot", "force-continue-autopilot"],
+                },
                 onSelect: () => {
                     const sessionID = getCurrentSessionID();
                     const newEnabled = !state.enabled;

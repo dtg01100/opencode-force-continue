@@ -84,6 +84,39 @@ describe('TUI integration', () => {
     expect(mockApi.command.register).toHaveBeenCalled();
   });
 
+  it('TUI command should be discoverable as a toggle and slash command', async () => {
+    const { tui } = await import('../force-continue.tui.js');
+
+    let capturedProvider;
+    const mockApi = {
+      command: {
+        register: vi.fn((provider) => {
+          capturedProvider = provider;
+          return vi.fn();
+        }),
+      },
+      ui: {
+        toast: vi.fn(),
+      },
+      route: {
+        current: {
+          name: 'session',
+          params: { sessionID: 'discoverable-session' },
+        },
+      },
+    };
+
+    await tui(mockApi, {}, {});
+
+    const commands = capturedProvider();
+    expect(commands[0].title).toBe('Toggle Autopilot');
+    expect(commands[0].slash).toEqual(
+      expect.objectContaining({
+        name: 'autopilot',
+      })
+    );
+  });
+
   it('TUI should handle missing API gracefully', async () => {
     const { tui } = await import('../force-continue.tui.js');
     

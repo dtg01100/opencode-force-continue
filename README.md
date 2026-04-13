@@ -14,9 +14,9 @@ This plugin solves that by acting as a safety net: when a session goes idle with
 
 ## Installation
 
-### Via opencode.json (recommended)
+### Via opencode.json and tui.json
 
-Add the plugin to your `opencode.json` (global `~/.config/opencode/opencode.json` or project-level `.opencode/opencode.json`):
+Add the server plugin to your `opencode.json` (global `~/.config/opencode/opencode.json` or project-level `.opencode/opencode.json`):
 
 ```json
 {
@@ -24,7 +24,15 @@ Add the plugin to your `opencode.json` (global `~/.config/opencode/opencode.json
 }
 ```
 
-Restart OpenCode. The plugin auto-installs and registers automatically.
+If you want the **TUI autopilot toggle** to appear inside OpenCode, also add the same package to your `tui.json` (global `~/.config/opencode/tui.json` or project-level `.opencode/tui.json`):
+
+```json
+{
+  "plugin": ["force-continue@git+https://github.com/dtg01100/opencode-force-continue.git"]
+}
+```
+
+Restart OpenCode after updating both files.
 
 ### Verify Installation
 
@@ -56,7 +64,7 @@ Remove the plugin from the `plugin` array in `opencode.json` and restart OpenCod
 
 ## Usage
 
-The plugin is intentionally simple and unobtrusive: once installed it runs automatically (no runtime toggle required).
+The plugin is intentionally simple and unobtrusive: once installed it runs automatically. In the TUI, you can also search for **Toggle Autopilot** or use the slash command **/autopilot** after the package is added to `tui.json`.
 
 Behavior summary:
 

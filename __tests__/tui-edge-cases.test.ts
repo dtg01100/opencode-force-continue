@@ -85,8 +85,9 @@ describe('TUI graceful degradation', () => {
     expect(global.enabled).toBe(false);
     expect(global.timestamp).toBeNull();
 
-    // After toggle, commands were re-registered with updated state
-    expect(registeredCommands![0].title).toBe('Disable Autopilot');
+    // After toggle, commands update with the new ON state
+    expect(registeredCommands![0].title).toBe('Toggle Autopilot');
+    expect(registeredCommands![0].description).toContain('Autopilot is ON');
 
     // Switching route alone does not create a session state entry.
     mockApi.route.current = { name: 'session', params: { sessionID: 'new-session-after-global-toggle' } };
@@ -153,7 +154,8 @@ describe('TUI graceful degradation', () => {
 
     await tui(mockApi);
     expect(Array.isArray(registeredCommands)).toBe(true);
-    expect(registeredCommands[0].title).toBe('Enable Autopilot');
+    expect(registeredCommands[0].title).toBe('Toggle Autopilot');
+    expect(registeredCommands[0].description).toContain('Autopilot is OFF');
 
     // Test with non-Error (string)
     registeredCommands = null;
@@ -267,7 +269,7 @@ describe('TUI command metadata', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].description).toBe('Autopilot is OFF - AI asks for guidance');
+    expect(mockApi._getCommands()[0].description).toBe('Autopilot is OFF - select to enable autonomous decisions');
   });
 
   it('description explains current state when enabled', async () => {
@@ -286,7 +288,7 @@ describe('TUI command metadata', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].description).toBe('Autopilot is ON - AI makes decisions autonomously');
+    expect(mockApi._getCommands()[0].description).toBe('Autopilot is ON - select to disable autonomous decisions');
   });
 
   it('onSelect returns undefined (synchronous)', async () => {
@@ -324,7 +326,8 @@ describe('TUI rapid toggle behavior', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+    expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+    expect(mockApi._getCommands()[0].description).toContain('Autopilot is OFF');
 
     mockApi._getCommands()[0].onSelect();
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
@@ -425,13 +428,15 @@ describe('TUI onSelect concurrency', () => {
 
     await tui(mockApi);
     const commands = mockApi._getCommands();
-    expect(commands[0].title).toBe('Enable Autopilot');
+    expect(commands[0].title).toBe('Toggle Autopilot');
+    expect(commands[0].description).toContain('Autopilot is OFF');
 
     commands[0].onSelect();
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
 
     const updatedCommands = mockApi._getCommands();
-    expect(updatedCommands[0].title).toBe('Disable Autopilot');
+    expect(updatedCommands[0].title).toBe('Toggle Autopilot');
+    expect(updatedCommands[0].description).toContain('Autopilot is ON');
   });
 
   it('rapid toggles do not cause state corruption', async () => {
@@ -477,8 +482,8 @@ describe('TUI state consistency', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
-    expect(mockApi._getCommands()[0].description).toBe('Autopilot is ON - AI makes decisions autonomously');
+    expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+    expect(mockApi._getCommands()[0].description).toBe('Autopilot is ON - select to disable autonomous decisions');
 
     mockApi._getCommands()[0].onSelect();
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
@@ -497,7 +502,8 @@ describe('TUI state consistency', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+    expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+    expect(mockApi._getCommands()[0].description).toContain('Autopilot is OFF');
 
     mockApi._getCommands()[0].onSelect();
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
@@ -517,7 +523,8 @@ describe('TUI state consistency', () => {
 
     await tui(mockApi);
     const commands = mockApi._getCommands();
-    expect(commands[0].title).toBe('Enable Autopilot');
+    expect(commands[0].title).toBe('Toggle Autopilot');
+    expect(commands[0].description).toContain('Autopilot is OFF');
     expect(() => commands[0].onSelect()).not.toThrow();
   });
 
@@ -567,7 +574,8 @@ describe('TUI state consistency', () => {
     };
 
     await tui(mockApi);
-    expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+    expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+    expect(mockApi._getCommands()[0].description).toContain('Autopilot is OFF');
   });
 
   it('registers exactly one command regardless of state', async () => {
@@ -596,7 +604,7 @@ describe('TUI property-based: state → command mapping', () => {
     resetAutopilotState();
   });
 
-  it('enabled=false always produces "Enable Autopilot" title', async () => {
+  it('enabled=false always produces the stable Toggle Autopilot title', async () => {
     for (let i = 0; i < 7; i++) {
       resetAutopilotState();
       sessionState.clear();
@@ -609,11 +617,12 @@ describe('TUI property-based: state → command mapping', () => {
       };
 
       await tui(mockApi);
-      expect(mockApi._getCommands()[0].title).toBe('Enable Autopilot');
+      expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+      expect(mockApi._getCommands()[0].description).toContain('Autopilot is OFF');
     }
   });
 
-  it('enabled=true always produces "Disable Autopilot" title', async () => {
+  it('enabled=true always produces the stable Toggle Autopilot title', async () => {
     for (let i = 0; i < 7; i++) {
       resetAutopilotState();
       sessionState.clear();
@@ -631,7 +640,8 @@ describe('TUI property-based: state → command mapping', () => {
       };
 
       await tui(mockApi);
-      expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
+      expect(mockApi._getCommands()[0].title).toBe('Toggle Autopilot');
+      expect(mockApi._getCommands()[0].description).toContain('Autopilot is ON');
     }
   });
 

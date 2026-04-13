@@ -9,7 +9,7 @@ describe('TUI disable autopilot', () => {
     sessionState.clear();
   });
 
-  it('selecting Disable Autopilot leaves autopilot disabled for session', async () => {
+  it('selecting Toggle Autopilot leaves autopilot disabled for session', async () => {
     const SESSION_ID = 'cancel-test-1';
     sessionState.set(SESSION_ID, { autopilotEnabled: true });
 
@@ -32,13 +32,15 @@ describe('TUI disable autopilot', () => {
 
     await tui(mockApi);
 
-    expect(registeredCommands![0].title).toBe('Disable Autopilot');
+    expect(registeredCommands![0].title).toBe('Toggle Autopilot');
+    expect(registeredCommands![0].description).toContain('Autopilot is ON');
 
     registeredCommands![0].onSelect();
 
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(false);
 
-    // Commands re-registered after toggle
-    expect(registeredCommands![0].title).toBe('Enable Autopilot');
+    // Commands update after toggle
+    expect(registeredCommands![0].title).toBe('Toggle Autopilot');
+    expect(registeredCommands![0].description).toContain('Autopilot is OFF');
   });
 });

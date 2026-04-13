@@ -37,7 +37,7 @@ function makeMockApi(sessionID = 'test-session-123') {
 describe('TUI autopilot toggle', () => {
   const sessionID = 'test-session-123';
 
-  it('registers a command with title "Enable Autopilot" when disabled', async () => {
+  it('registers a discoverable Toggle Autopilot command when disabled', async () => {
     setAutopilotEnabled(sessionID, false);
 
     const mockApi = makeMockApi(sessionID);
@@ -45,7 +45,8 @@ describe('TUI autopilot toggle', () => {
 
     const commands = mockApi._getRegisteredCommands();
     expect(commands).toHaveLength(1);
-    expect(commands[0].title).toBe('Enable Autopilot');
+    expect(commands[0].title).toBe('Toggle Autopilot');
+    expect(commands[0].description).toContain('Autopilot is OFF');
   });
 
   it('enables autopilot directly on select without confirmation dialog', async () => {
@@ -60,14 +61,15 @@ describe('TUI autopilot toggle', () => {
     expect(getAutopilotEnabled(sessionID)).toBe(true);
   });
 
-  it('registers command with title "Disable Autopilot" when already enabled', async () => {
+  it('registers the same Toggle Autopilot command when already enabled', async () => {
     setAutopilotEnabled(sessionID, true);
 
     const mockApi = makeMockApi(sessionID);
 
     await tui(mockApi);
 
-    expect(mockApi._getRegisteredCommands()[0].title).toBe('Disable Autopilot');
+    expect(mockApi._getRegisteredCommands()[0].title).toBe('Toggle Autopilot');
+    expect(mockApi._getRegisteredCommands()[0].description).toContain('Autopilot is ON');
   });
 
   it('uses runtime-compatible registration for the command list', async () => {
@@ -95,7 +97,8 @@ describe('TUI autopilot toggle', () => {
     await tui(mockApi);
 
     expect(['function', 'object']).toContain(typeof registeredCommands);
-    expect(resolveCommands(registeredCommands)[0].title).toBe('Enable Autopilot');
+    expect(resolveCommands(registeredCommands)[0].title).toBe('Toggle Autopilot');
+    expect(resolveCommands(registeredCommands)[0].slash?.name).toBe('autopilot');
   });
 
   it('shows toast notification when enabling autopilot', async () => {
