@@ -114,6 +114,10 @@ export function startPeriodicCleanup(intervalMs = 60 * 60 * 1000, ttlMs) {
             console.error(`[force-continue] startPeriodicCleanup: cleanup job failed: ${e?.message ?? e}`);
         }
     }, effectiveInterval);
+    // Unref the interval so it doesn't keep the Node.js process alive
+    if (typeof cleanupInterval.unref === "function") {
+        cleanupInterval.unref();
+    }
 }
 
 /**
