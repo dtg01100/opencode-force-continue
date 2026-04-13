@@ -86,18 +86,18 @@ export const tui = async (api, options, meta) => {
         }
 
         try {
-            const dispose = api.command.register(commandsProvider);
-            callbackRegistrationSupported = true;
-            if (typeof dispose === "function") disposeCommands.push(dispose);
-        } catch (error) {
-            callbackRegistrationSupported = false;
+            // Get the static commands array from the provider
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
                 const dispose = api.command.register(commands);
                 if (typeof dispose === "function") disposeCommands.push(dispose);
-            } else {
-                throw new Error(`force-continue: command registration failed — callback not supported and provider did not return an array`);
+                // Array registration is NOT callback registration, so we need
+                // to re-register when state changes (e.g., toggle)
+                callbackRegistrationSupported = false;
             }
+        } catch (error) {
+            // Silently fail - command registration is non-critical
+            console.debug(`force-continue: command registration failed — ${error?.message ?? error}`);
         }
     };
 

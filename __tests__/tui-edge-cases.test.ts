@@ -12,11 +12,11 @@ describe('TUI graceful degradation', () => {
 
   it('works when api.ui.toast is undefined', async () => {
     const SESSION_ID = 'edge-test-1';
-    let getCommandsFn: (() => any[]) | null = null;
+    let registeredCommands: any[] | null = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          getCommandsFn = fn;
+        register: (commands: any[]) => {
+          registeredCommands = commands;
           return () => {};
         },
       },
@@ -27,39 +27,37 @@ describe('TUI graceful degradation', () => {
     };
 
     await tui(mockApi);
-    const commands = getCommandsFn!();
-    expect(commands).toHaveLength(1);
+    expect(registeredCommands).toHaveLength(1);
 
     // onSelect should not throw even though toast is missing
-    expect(() => commands[0].onSelect()).not.toThrow();
+    expect(() => registeredCommands![0].onSelect()).not.toThrow();
     expect(sessionState.get(SESSION_ID)?.autopilotEnabled).toBe(true);
   });
 
   it('works when api.ui is undefined', async () => {
-    let getCommandsFn: (() => any[]) | null = null;
+    let registeredCommands: any[] | null = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          getCommandsFn = fn;
+        register: (commands: any[]) => {
+          registeredCommands = commands;
           return () => {};
         },
       },
     };
 
     await tui(mockApi);
-    const commands = getCommandsFn!();
-    expect(commands).toHaveLength(1);
-    expect(() => commands[0].onSelect()).not.toThrow();
+    expect(registeredCommands).toHaveLength(1);
+    expect(() => registeredCommands![0].onSelect()).not.toThrow();
   });
 
   it('sets autopilot for next session when route is not a session without mutating global state', async () => {
-    let getCommandsFn: (() => any[]) | null = null;
+    let registeredCommands: any[] | null = null;
     const toastCalls: any[] = [];
     const beforeSize = sessionState.size;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          getCommandsFn = fn;
+        register: (commands: any[]) => {
+          registeredCommands = commands;
           return () => {};
         },
       },
@@ -74,8 +72,7 @@ describe('TUI graceful degradation', () => {
     };
 
     await tui(mockApi);
-    const commands = getCommandsFn!();
-    commands[0].onSelect();
+    registeredCommands![0].onSelect();
 
     expect(toastCalls).toHaveLength(1);
     expect(toastCalls[0]).toMatchObject({
@@ -88,8 +85,8 @@ describe('TUI graceful degradation', () => {
     expect(global.enabled).toBe(false);
     expect(global.timestamp).toBeNull();
 
-    // While still not in a session, command reflects one-shot next-session setting.
-    expect(getCommandsFn!()[0].title).toBe('Disable Autopilot');
+    // After toggle, commands were re-registered with updated state
+    expect(registeredCommands![0].title).toBe('Disable Autopilot');
 
     // Switching route alone does not create a session state entry.
     mockApi.route.current = { name: 'session', params: { sessionID: 'new-session-after-global-toggle' } };
@@ -180,8 +177,8 @@ describe('TUI graceful degradation', () => {
     const SESSION_2 = 'variant-test-2';
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
+        register: (commands: any[]) => {
+          mockApi._getCommands = () => commands;
           return () => {};
         },
       },
@@ -203,8 +200,8 @@ describe('TUI graceful degradation', () => {
     sessionState.set(SESSION_2, { autopilotEnabled: true });
     const freshApi: any = {
       command: {
-        register: (fn: any) => {
-          freshApi._getCommands = fn;
+        register: (commands: any[]) => {
+          freshApi._getCommands = () => commands;
           return () => {};
         },
       },
@@ -237,7 +234,7 @@ describe('TUI command metadata', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -251,7 +248,7 @@ describe('TUI command metadata', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -264,7 +261,7 @@ describe('TUI command metadata', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -280,7 +277,7 @@ describe('TUI command metadata', () => {
     sessionState.set(SESSION_ID, { autopilotEnabled: true });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -296,7 +293,7 @@ describe('TUI command metadata', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -318,7 +315,7 @@ describe('TUI rapid toggle behavior', () => {
     const SESSION_ID = 'rapid-toggle-1';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -345,7 +342,7 @@ describe('TUI rapid toggle behavior', () => {
     const SESSION_ID = 'rapid-toggle-2';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -366,7 +363,7 @@ describe('TUI rapid toggle behavior', () => {
     const SESSION_ID = 'rapid-toggle-3';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -395,7 +392,7 @@ describe('TUI onSelect concurrency', () => {
     const SESSION_ID = 'concurrency-1';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -418,7 +415,7 @@ describe('TUI onSelect concurrency', () => {
     const SESSION_ID = 'concurrency-2';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -441,7 +438,7 @@ describe('TUI onSelect concurrency', () => {
     const SESSION_ID = 'rapid-2';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -471,7 +468,7 @@ describe('TUI state consistency', () => {
     sessionState.set(SESSION_ID, { autopilotEnabled: true });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -491,7 +488,7 @@ describe('TUI state consistency', () => {
     const SESSION_ID = 'state-consist-2';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -510,7 +507,7 @@ describe('TUI state consistency', () => {
     const SESSION_ID = 'state-consist-3';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -528,7 +525,7 @@ describe('TUI state consistency', () => {
     const SESSION_ID = 'state-consist-4';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -544,7 +541,7 @@ describe('TUI state consistency', () => {
     const SESSION_ID = 'state-consist-5';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -561,7 +558,7 @@ describe('TUI state consistency', () => {
     const SESSION_ID = 'state-consist-6';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
       route: {
@@ -580,7 +577,7 @@ describe('TUI state consistency', () => {
 
       const mockApi: any = {
         command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+          register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
         },
         ui: { toast: vi.fn() },
         route: {
@@ -606,7 +603,7 @@ describe('TUI property-based: state → command mapping', () => {
 
       const mockApi: any = {
         command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+          register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
         },
         ui: { toast: vi.fn() },
       };
@@ -625,7 +622,7 @@ describe('TUI property-based: state → command mapping', () => {
 
       const mockApi: any = {
         command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+          register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
         },
         ui: { toast: vi.fn() },
         route: {
@@ -645,7 +642,7 @@ describe('TUI property-based: state → command mapping', () => {
     let toastVariant = '';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: {
         toast: ({ variant }: any) => { toastVariant = variant; },
@@ -668,7 +665,7 @@ describe('TUI property-based: state → command mapping', () => {
     let toastVariant = '';
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: {
         toast: ({ variant }: any) => { toastVariant = variant; },
@@ -701,7 +698,7 @@ describe('TUI property-based: state → command mapping', () => {
 
       const mockApi: any = {
         command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+          register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
         },
         ui: { toast: vi.fn() },
         route: {
@@ -729,7 +726,7 @@ describe('TUI property-based: state → command mapping', () => {
 
       const mockApi: any = {
         command: {
-          register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+          register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
         },
         ui: { toast: vi.fn() },
       };
@@ -751,7 +748,7 @@ describe('TUI API contract compliance', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -764,7 +761,7 @@ describe('TUI API contract compliance', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -781,7 +778,7 @@ describe('TUI API contract compliance', () => {
     let receivedToast: any = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: {
         toast: (toast: any) => { receivedToast = toast; },
@@ -808,7 +805,7 @@ describe('TUI API contract compliance', () => {
     let variant1 = '';
     const mockApi1: any = {
       command: {
-        register: (fn: any) => { mockApi1._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi1._getCommands = () => commands; return () => {}; },
       },
       ui: {
         toast: ({ variant }: any) => { variant1 = variant; },
@@ -824,7 +821,7 @@ describe('TUI API contract compliance', () => {
     let variant2 = '';
     const mockApi2: any = {
       command: {
-        register: (fn: any) => { mockApi2._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi2._getCommands = () => commands; return () => {}; },
       },
       ui: {
         toast: ({ variant }: any) => { variant2 = variant; },
@@ -839,7 +836,7 @@ describe('TUI API contract compliance', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -861,7 +858,7 @@ describe('TUI API contract compliance', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -883,7 +880,7 @@ describe('TUI API contract compliance', () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     const mockApi: any = {
       command: {
-        register: (fn: any) => { mockApi._getCommands = fn; return () => {}; },
+        register: (commands: any[]) => { mockApi._getCommands = () => commands; return () => {}; },
       },
       ui: { toast: vi.fn() },
     };
@@ -901,30 +898,30 @@ describe('TUI API contract compliance', () => {
 
   it('register callback returns a dispose function', async () => {
     writeAutopilotState({ enabled: false, timestamp: null });
-    let disposeFn: (() => void) | null = null;
+    let returnedDispose: (() => void) | null = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
-          disposeFn = fn; // In real API, register returns dispose; here we test our mock captures it
-          return () => {};
+        register: (commands: any[]) => {
+          mockApi._getCommands = () => commands;
+          returnedDispose = () => {};
+          return returnedDispose;
         },
       },
       ui: { toast: vi.fn() },
     };
 
-    const dispose = mockApi.command.register((() => []) as any);
-    expect(typeof dispose).toBe('function');
+    await tui(mockApi);
+    expect(typeof returnedDispose).toBe('function');
   });
 
-  it('register receives a callback provider in normal host mode', async () => {
+  it('register receives a static commands array (callback registration removed)', async () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     let registerArg: any = null;
     const mockApi: any = {
       command: {
-        register: (value: any) => {
-          registerArg = value;
-          mockApi._getCommands = value;
+        register: (commands: any[]) => {
+          registerArg = commands;
+          mockApi._getCommands = () => commands;
           return () => {};
         },
       },
@@ -933,7 +930,7 @@ describe('TUI API contract compliance', () => {
 
     await tui(mockApi);
 
-    expect(typeof registerArg).toBe('function');
+    expect(Array.isArray(registerArg)).toBe(true);
     expect(Array.isArray(mockApi._getCommands())).toBe(true);
     expect(mockApi._getCommands()[0].value).toBe('force-continue:autopilot');
   });
@@ -948,8 +945,8 @@ describe('TUI dispose cleanup on re-registration', () => {
     const disposeCalls: number[] = [];
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
+        register: (commands: any[]) => {
+          mockApi._getCommands = () => commands;
           return () => {
             disposeCalls.push(disposeCalls.length + 1);
           };
@@ -975,8 +972,8 @@ describe('TUI dispose cleanup on re-registration', () => {
   it('does not throw when previous dispose is missing or undefined', async () => {
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
+        register: (commands: any[]) => {
+          mockApi._getCommands = () => commands;
           // Return undefined instead of dispose function
           return undefined;
         },

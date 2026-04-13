@@ -659,47 +659,35 @@ describe('TUI registration failure error path', () => {
     resetAutopilotState();
   });
 
-  it('should throw original error when register throws on callback AND on array fallback', async () => {
+  it('should silently fail when register throws with array registration', async () => {
     const { tui } = await import('../force-continue.tui.js');
     const mockApi: any = {
       command: {
-        register: (value: any) => {
-          // Always throw — doesn't matter if callback or array
+        register: (commands: any[]) => {
           throw new Error('register not supported');
         },
       },
       ui: { toast: vi.fn() },
     };
 
-    // The fallback path calls register a second time with array, which also throws
-    // The original error propagates (no outer try/catch in registerCommands)
-    await expect(tui(mockApi)).rejects.toThrow('register not supported');
+    // Errors during registration are caught and logged, not thrown
+    await tui(mockApi);
+    // TUI should still resolve without throwing
   });
 
-  it('should throw custom error when register throws on callback and provider returns non-array', async () => {
+  it('should silently fail when register always throws', async () => {
     const { tui } = await import('../force-continue.tui.js');
-    // Override getCommands to return non-array
-    const originalTuiModule = await import('../force-continue.tui.js');
     const mockApi: any = {
       command: {
-        register: (value: any) => {
-          if (typeof value === 'function') {
-            throw new Error('callback not supported');
-          }
-          // value is the result of commandsProvider() — if not array, throw custom error
-          throw new Error(`force-continue: command registration failed`);
+        register: (commands: any[]) => {
+          throw new Error('register not supported');
         },
       },
       ui: { toast: vi.fn() },
     };
 
-    // To test the custom error path, we need commandsProvider() to return non-array
-    // Since getCommands() always returns an array, we need to test a different scenario:
-    // where register throws on callback, and the catch block's register ALSO throws
-    // with the custom error because commandsProvider returned non-array (impossible with real getCommands)
-    // Instead, let's verify the fallback path works when getCommands returns an array
-    // but register still throws — the second error propagates
-    await expect(tui(mockApi)).rejects.toThrow('force-continue: command registration failed');
+    // Errors are caught and logged as debug messages, not propagated
+    await tui(mockApi);
   });
 
   it('should successfully register when callback throws but array fallback works', async () => {

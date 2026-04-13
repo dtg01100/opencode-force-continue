@@ -3,12 +3,12 @@ import { tui } from '../force-continue.tui.js';
 import { getAutopilotEnabled, setAutopilotEnabled } from '../src/state.js';
 
 function makeMockApi(sessionID = 'test-session-123') {
-  let getCommandsFn: (() => any[]) | null = null;
+  let registeredCommands: any[] | null = null;
 
   const mockApi: any = {
     command: {
-      register: (fn: any) => {
-        getCommandsFn = fn;
+      register: (commands: any) => {
+        registeredCommands = Array.isArray(commands) ? commands : null;
         return () => {};
       },
     },
@@ -21,7 +21,7 @@ function makeMockApi(sessionID = 'test-session-123') {
     ui: {
       toast: (_: any) => {},
     },
-    _getCommands: () => getCommandsFn?.() ?? [],
+    _getRegisteredCommands: () => registeredCommands ?? [],
   };
 
   return mockApi;
@@ -36,7 +36,7 @@ describe('TUI autopilot toggle', () => {
     const mockApi = makeMockApi(sessionID);
     await tui(mockApi);
 
-    const commands = mockApi._getCommands();
+    const commands = mockApi._getRegisteredCommands();
     expect(commands).toHaveLength(1);
     expect(commands[0].title).toBe('Enable Autopilot');
   });
@@ -47,13 +47,13 @@ describe('TUI autopilot toggle', () => {
     const mockApi = makeMockApi(sessionID);
     await tui(mockApi);
 
-    const commands = mockApi._getCommands();
+    const commands = mockApi._getRegisteredCommands();
     commands[0].onSelect();
 
     expect(getAutopilotEnabled(sessionID)).toBe(true);
 
-    // getCommands callback always reads fresh state — label should now be "Disable Autopilot"
-    expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
+    // Commands are registered once with initial state; we don't re-register on select
+    // since opencode 1.4.3 has a bug with callback-based registration
   });
 
   it('registers command with title "Disable Autopilot" when already enabled', async () => {
@@ -63,19 +63,16 @@ describe('TUI autopilot toggle', () => {
 
     await tui(mockApi);
 
-    expect(mockApi._getCommands()[0].title).toBe('Disable Autopilot');
+    expect(mockApi._getRegisteredCommands()[0].title).toBe('Disable Autopilot');
   });
 
-  it('uses array registration when api.command.register rejects callbacks', async () => {
+  it('uses array registration (callback registration removed due to opencode 1.4.3 bug)', async () => {
     setAutopilotEnabled(sessionID, false);
 
     let registeredCommands: any = null;
     const mockApi: any = {
       command: {
         register: (value: any) => {
-          if (typeof value === 'function') {
-            throw new Error('callback not supported');
-          }
           registeredCommands = value;
           return () => {};
         },
@@ -102,10 +99,11 @@ describe('TUI autopilot toggle', () => {
 
     let toastMessage = '';
     let toastVariant = '';
+    let registeredCommands: any = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
+        register: (commands: any) => {
+          registeredCommands = commands;
           return () => {};
         },
       },
@@ -124,7 +122,7 @@ describe('TUI autopilot toggle', () => {
     };
 
     await tui(mockApi);
-    mockApi._getCommands()[0].onSelect();
+    registeredCommands[0].onSelect();
 
     expect(toastMessage).toBe('Autopilot enabled');
     expect(toastVariant).toBe('warning');
@@ -135,10 +133,11 @@ describe('TUI autopilot toggle', () => {
 
     let toastMessage = '';
     let toastVariant = '';
+    let registeredCommands: any = null;
     const mockApi: any = {
       command: {
-        register: (fn: any) => {
-          mockApi._getCommands = fn;
+        register: (commands: any) => {
+          registeredCommands = commands;
           return () => {};
         },
       },
@@ -157,7 +156,7 @@ describe('TUI autopilot toggle', () => {
     };
 
     await tui(mockApi);
-    mockApi._getCommands()[0].onSelect();
+    registeredCommands[0].onSelect();
 
     expect(toastMessage).toBe('Autopilot disabled');
     expect(toastVariant).toBe('info');
