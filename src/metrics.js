@@ -20,6 +20,7 @@ function createMetricsTracker() {
         totalMessagesEmpty: 0,
         totalMessagesErrors: 0,
         totalLastMsgNotAssistant: 0,
+        totalLastMsgMissingRole: 0,
         totalAutopilotAttempts: 0,
         totalAutopilotFallbacks: 0,
         totalAutopilotGuidanceResolutions: 0,
@@ -57,7 +58,7 @@ function createMetricsTracker() {
                 case "messages.empty": metrics.totalMessagesEmpty++; break;
                 case "messages.error": metrics.totalMessagesErrors++; break;
                 case "last.msg.not.assistant": metrics.totalLastMsgNotAssistant++; break;
-                case "last.msg.missing.role": metrics.totalLastMsgNotAssistant++; break;
+                case "last.msg.missing.role": metrics.totalLastMsgMissingRole++; break;
                 case "prompt.continue": metrics.promptContinue++; break;
                 case "prompt.escalation": metrics.promptEscalation++; break;
                 case "prompt.loop.break": metrics.promptLoopBreak++; break;
@@ -131,6 +132,7 @@ function createMetricsTracker() {
                 messagesEmpty: metrics.totalMessagesEmpty,
                 messagesErrors: metrics.totalMessagesErrors,
                 lastMsgNotAssistant: metrics.totalLastMsgNotAssistant,
+                lastMsgMissingRole: metrics.totalLastMsgMissingRole,
                 totalAutopilotAttempts: metrics.totalAutopilotAttempts,
                 totalAutopilotFallbacks: metrics.totalAutopilotFallbacks,
                 totalAutopilotGuidanceResolutions: metrics.totalAutopilotGuidanceResolutions,

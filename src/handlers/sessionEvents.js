@@ -52,7 +52,7 @@ function madeProgress(currentText, previousText) {
     if (!previousText || !currentText) return false;
     if (currentText === previousText) return false;
     if (currentText.startsWith(previousText) && currentText.length > previousText.length * 1.2) return true;
-    if (previousText.startsWith(currentText) && previousText.length > currentText.length * 1.2) return true;
+    if (previousText.startsWith(currentText) && previousText.length > currentText.length * 1.2) return false;
     const prevWords = new Set(previousText.toLowerCase().split(/\s+/));
     let newWordCount = 0;
     for (const word of currentText.toLowerCase().split(/\s+/)) {
@@ -166,7 +166,15 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }
             
             if (messagesError) {
+                meta.errorCount = (meta.errorCount || 0) + 1;
+                sessionState.set(sessionID, meta);
                 metricsTracker.record(sessionID, "messages.error");
+                if (meta.errorCount >= config.circuitBreakerThreshold) {
+                    metricsTracker.record(sessionID, "circuit.breaker.trip");
+                    setPauseState(sessionID, 'circuit_breaker');
+                    log("warn", "Circuit breaker tripped after messages error", { sessionID, errorCount: meta.errorCount });
+                    return;
+                }
                 log("debug", "failed to fetch messages", { sessionID, error: messagesError?.message });
                 return;
             }
@@ -416,7 +424,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
 
-            if (isTerminalCompletion(meta) || getCompletionStatus(meta) === "completed" || (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed")) {
+            if (isTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed")) {
                 metricsTracker.record(sessionID, "idle.skipped.complete");
                 log("debug", "idle skipped: session completed", { sessionID });
                 return;

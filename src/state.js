@@ -94,8 +94,10 @@ export function cleanupExpiredSessions() {
  * @param {number} ttlMs - Optional TTL override; calls setSessionTtl if provided
  */
 export function startPeriodicCleanup(intervalMs = 60 * 60 * 1000, ttlMs) {
-    if (ttlMs !== undefined || !sessionTtlExplicitlySet) {
+    if (ttlMs !== undefined) {
         sessionTtlMs = ttlMs;
+    } else if (!sessionTtlExplicitlySet) {
+        sessionTtlMs = 24 * 60 * 60 * 1000;
     }
     if (cleanupInterval) {
         clearInterval(cleanupInterval);
