@@ -6,6 +6,7 @@ export const id = "force-continue";
 
 let disposeCommands = [];
 let callbackRegistrationSupported = false;
+let refreshRegisteredCommands = () => {};
 
 export const tui = async (api, options, meta) => {
     // Cleanup previous registrations
@@ -65,9 +66,9 @@ export const tui = async (api, options, meta) => {
                         });
                     }
 
-                    // If callback registration is not supported, re-register static
-                    // commands so the UI can refresh the command list.
-                    if (!callbackRegistrationSupported) {
+                    if (callbackRegistrationSupported) {
+                        refreshRegisteredCommands();
+                    } else {
                         for (const dispose of disposeCommands) {
                             if (typeof dispose === "function") dispose();
                         }
@@ -85,15 +86,41 @@ export const tui = async (api, options, meta) => {
             return;
         }
 
+        const callbackRegistration = (_refreshToken) => {
+            const commands = commandsProvider();
+            const numericKeys = Object.keys(callbackRegistration).filter((key) => /^\d+$/.test(key));
+            for (const key of numericKeys) {
+                delete callbackRegistration[key];
+            }
+            if (Array.isArray(commands)) {
+                commands.forEach((command, index) => {
+                    callbackRegistration[index] = command;
+                });
+            }
+            return commands;
+        };
+
+        refreshRegisteredCommands = () => {
+            callbackRegistration(undefined);
+        };
+        refreshRegisteredCommands();
+
         try {
-            // Get the static commands array from the provider
+            const dispose = api.command.register(callbackRegistration);
+            if (typeof dispose === "function") disposeCommands.push(dispose);
+            callbackRegistrationSupported = true;
+            return;
+        } catch (error) {
+            console.debug(`force-continue: callback registration unavailable — ${error?.message ?? error}`);
+        }
+
+        try {
             const commands = commandsProvider();
             if (Array.isArray(commands)) {
                 const dispose = api.command.register(commands);
                 if (typeof dispose === "function") disposeCommands.push(dispose);
-                // Array registration is NOT callback registration, so we need
-                // to re-register when state changes (e.g., toggle)
                 callbackRegistrationSupported = false;
+                refreshRegisteredCommands = () => {};
             }
         } catch (error) {
             // Silently fail - command registration is non-critical

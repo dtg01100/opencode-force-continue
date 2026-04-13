@@ -914,13 +914,16 @@ describe('TUI API contract compliance', () => {
     expect(typeof returnedDispose).toBe('function');
   });
 
-  it('register receives a static commands array (callback registration removed)', async () => {
+  it('register receives a runtime-compatible command provider', async () => {
     writeAutopilotState({ enabled: false, timestamp: null });
     let registerArg: any = null;
     const mockApi: any = {
       command: {
-        register: (commands: any[]) => {
-          registerArg = commands;
+        register: (commandsOrProvider: any) => {
+          registerArg = commandsOrProvider;
+          const commands = typeof commandsOrProvider === 'function'
+            ? commandsOrProvider()
+            : commandsOrProvider;
           mockApi._getCommands = () => commands;
           return () => {};
         },
@@ -930,7 +933,7 @@ describe('TUI API contract compliance', () => {
 
     await tui(mockApi);
 
-    expect(Array.isArray(registerArg)).toBe(true);
+    expect(['function', 'object']).toContain(typeof registerArg);
     expect(Array.isArray(mockApi._getCommands())).toBe(true);
     expect(mockApi._getCommands()[0].value).toBe('force-continue:autopilot');
   });

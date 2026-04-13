@@ -21,6 +21,43 @@ describe('TUI integration', () => {
     expect(tuiModule.default.id).toBe('force-continue');
   });
 
+  it('TUI should support callback-based command registration', async () => {
+    const { tui } = await import('../force-continue.tui.js');
+
+    let capturedProvider;
+    const mockApi = {
+      command: {
+        register: vi.fn((provider) => {
+          capturedProvider = provider;
+          return vi.fn();
+        }),
+      },
+      ui: {
+        toast: vi.fn(),
+      },
+      route: {
+        current: {
+          name: 'session',
+          params: { sessionID: 'callback-session' },
+        },
+      },
+    };
+
+    await tui(mockApi, {}, {});
+
+    expect(mockApi.command.register).toHaveBeenCalledTimes(1);
+    expect(typeof capturedProvider).toBe('function');
+    const commands = capturedProvider();
+    expect(Array.isArray(commands)).toBe(true);
+    expect(commands[0]).toEqual(
+      expect.objectContaining({
+        title: expect.any(String),
+        value: 'force-continue:autopilot',
+        onSelect: expect.any(Function),
+      })
+    );
+  });
+
   it('TUI function should accept OpenCode API and register commands', async () => {
     const { tui } = await import('../force-continue.tui.js');
     

@@ -2,13 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { getAutopilotEnabled, setAutopilotEnabled } from '../src/state.js';
 
+function resolveCommands(commandsOrProvider: any) {
+  if (typeof commandsOrProvider === 'function') {
+    return commandsOrProvider();
+  }
+  return commandsOrProvider ?? [];
+}
+
 function makeMockApi(sessionID = 'test-session-123') {
-  let registeredCommands: any[] | null = null;
+  let registeredCommands: any = null;
 
   const mockApi: any = {
     command: {
       register: (commands: any) => {
-        registeredCommands = Array.isArray(commands) ? commands : null;
+        registeredCommands = commands;
         return () => {};
       },
     },
@@ -21,7 +28,7 @@ function makeMockApi(sessionID = 'test-session-123') {
     ui: {
       toast: (_: any) => {},
     },
-    _getRegisteredCommands: () => registeredCommands ?? [],
+    _getRegisteredCommands: () => resolveCommands(registeredCommands),
   };
 
   return mockApi;
@@ -51,9 +58,6 @@ describe('TUI autopilot toggle', () => {
     commands[0].onSelect();
 
     expect(getAutopilotEnabled(sessionID)).toBe(true);
-
-    // Commands are registered once with initial state; we don't re-register on select
-    // since opencode 1.4.3 has a bug with callback-based registration
   });
 
   it('registers command with title "Disable Autopilot" when already enabled', async () => {
@@ -66,7 +70,7 @@ describe('TUI autopilot toggle', () => {
     expect(mockApi._getRegisteredCommands()[0].title).toBe('Disable Autopilot');
   });
 
-  it('uses array registration (callback registration removed due to opencode 1.4.3 bug)', async () => {
+  it('uses runtime-compatible registration for the command list', async () => {
     setAutopilotEnabled(sessionID, false);
 
     let registeredCommands: any = null;
@@ -90,8 +94,8 @@ describe('TUI autopilot toggle', () => {
 
     await tui(mockApi);
 
-    expect(Array.isArray(registeredCommands)).toBe(true);
-    expect(registeredCommands[0].title).toBe('Enable Autopilot');
+    expect(['function', 'object']).toContain(typeof registeredCommands);
+    expect(resolveCommands(registeredCommands)[0].title).toBe('Enable Autopilot');
   });
 
   it('shows toast notification when enabling autopilot', async () => {
@@ -122,7 +126,7 @@ describe('TUI autopilot toggle', () => {
     };
 
     await tui(mockApi);
-    registeredCommands[0].onSelect();
+    resolveCommands(registeredCommands)[0].onSelect();
 
     expect(toastMessage).toBe('Autopilot enabled');
     expect(toastVariant).toBe('warning');
@@ -156,7 +160,7 @@ describe('TUI autopilot toggle', () => {
     };
 
     await tui(mockApi);
-    registeredCommands[0].onSelect();
+    resolveCommands(registeredCommands)[0].onSelect();
 
     expect(toastMessage).toBe('Autopilot disabled');
     expect(toastVariant).toBe('info');
