@@ -1,3 +1,5 @@
+import os from "os";
+import { join } from "path";
 import { sessionState } from "./state.js";
 import { metrics } from "./metrics.js";
 import { resolveConfig } from "./config.js";
@@ -22,6 +24,7 @@ import {
 } from "./handlers/index.js";
 import { createValidateTool } from "./tools/validate.js";
 import { setSessionTtl } from "./state.js";
+import { syncTuiConfigFromOpencode } from "./install-config.js";
 
 export {
     sessionState,
@@ -47,12 +50,50 @@ export { getAutopilotEnabled, getAutopilotMaxAttempts, resetAutopilotState, setA
 // Guarded so importing the module does not pin a process open.
 import { startPeriodicCleanup, stopPeriodicCleanup } from "./state.js";
 let periodicCleanupStarted = false;
+let tuiConfigSyncAttempted = false;
+
 function ensurePeriodicCleanupStarted() {
     if (periodicCleanupStarted) {
         return;
     }
     periodicCleanupStarted = true;
     startPeriodicCleanup(60 * 60 * 1000, resolveConfig().sessionTtlMs);
+}
+
+function syncTuiConfigForCurrentInstall(log, ctx = {}) {
+    if (tuiConfigSyncAttempted) {
+        return;
+    }
+    tuiConfigSyncAttempted = true;
+
+    const candidateDirs = new Set();
+    const addDir = (value) => {
+        if (!value || typeof value !== "string") return;
+        candidateDirs.add(value);
+    };
+
+    addDir(process.env.OPENCODE_CONFIG_DIR);
+    addDir(join(process.cwd(), ".opencode"));
+    addDir(join(os.homedir(), ".config", "opencode"));
+    if (ctx?.directory) addDir(join(ctx.directory, ".opencode"));
+    if (ctx?.worktree) addDir(join(ctx.worktree, ".opencode"));
+
+    for (const baseDir of candidateDirs) {
+        try {
+            const result = syncTuiConfigFromOpencode(baseDir, id);
+            if (result.changed) {
+                log("info", "Synced TUI plugin config from opencode.json", {
+                    baseDir,
+                    spec: result.spec,
+                });
+            }
+        } catch (error) {
+            log("warn", "Failed to sync TUI plugin config", {
+                baseDir,
+                error: error?.message ?? error,
+            });
+        }
+    }
 }
 
 export const createContinuePlugin = (options = {}) => {
@@ -77,6 +118,8 @@ export const createContinuePlugin = (options = {}) => {
                 logger[level](message, extra);
             }
         };
+
+        syncTuiConfigForCurrentInstall(log, ctx);
 
         const returnObj = {};
 

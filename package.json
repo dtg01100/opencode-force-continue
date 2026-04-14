@@ -2,9 +2,17 @@
   "name": "force-continue",
   "version": "1.0.2",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dtg01100/opencode-force-continue.git"
+  },
   "main": "force-continue.server.js",
+  "bin": {
+    "force-continue": "./scripts/setup-opencode.mjs"
+  },
   "files": [
     "src/",
+    "scripts/setup-opencode.mjs",
     "force-continue.server.js",
     "force-continue.tui.js"
   ],
@@ -21,7 +29,9 @@
   },
   "scripts": {
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "setup:local": "node ./scripts/setup-opencode.mjs",
+    "setup:global": "node ./scripts/setup-opencode.mjs --global"
   },
   "devDependencies": {
     "vitest": "^4.1.2"

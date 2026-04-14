@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'path';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, unlinkSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 
 vi.mock('@opencode-ai/plugin', () => {
   const schemaMethods = (defaultFn) => ({
@@ -101,6 +102,28 @@ describe('ContinuePlugin', () => {
   };
 
   describe('session tracking', () => {
+    it('should mirror its plugin spec into tui.json when only opencode.json is configured', async () => {
+      const tempRoot = mkdtempSync(join(tmpdir(), 'force-continue-plugin-'));
+      const configDir = join(tempRoot, '.opencode');
+      const spec = 'force-continue@git+https://github.com/dtg01100/opencode-force-continue.git';
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'opencode.json'), JSON.stringify({ plugin: [spec] }, null, 2));
+
+      const cwdSpy = vi.spyOn(process, 'cwd').mockImplementation(() => tempRoot);
+
+      try {
+        const { createContinuePlugin } = await import('../force-continue.server.js');
+        const createPlugin = createContinuePlugin();
+        await createPlugin(mockCtx);
+
+        const tuiConfig = JSON.parse(readFileSync(join(configDir, 'tui.json'), 'utf-8'));
+        expect(tuiConfig.plugin).toContain(spec);
+      } finally {
+        cwdSpy.mockRestore();
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    });
+
     it('should track session as incomplete on chat.message', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();

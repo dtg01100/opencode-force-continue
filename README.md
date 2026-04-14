@@ -14,17 +14,9 @@ This plugin solves that by acting as a safety net: when a session goes idle with
 
 ## Installation
 
-### Via opencode.json and tui.json
+### One-line install in opencode.json
 
-Add the server plugin to your `opencode.json` (global `~/.config/opencode/opencode.json` or project-level `.opencode/opencode.json`):
-
-```json
-{
-  "plugin": ["force-continue@git+https://github.com/dtg01100/opencode-force-continue.git"]
-}
-```
-
-If you want the **TUI autopilot toggle** to appear inside OpenCode, also add the same package to your `tui.json` (global `~/.config/opencode/tui.json` or project-level `.opencode/tui.json`):
+Add the package to your server plugin config in `opencode.json` (global `~/.config/opencode/opencode.json` or project-level `.opencode/opencode.json`):
 
 ```json
 {
@@ -32,15 +24,29 @@ If you want the **TUI autopilot toggle** to appear inside OpenCode, also add the
 }
 ```
 
-Restart OpenCode after updating both files.
+Then restart OpenCode.
+
+On startup, the server plugin now **automatically mirrors its exact plugin entry into `tui.json`** so the TUI features are set up without requiring a second manual edit.
+
+That means one line in `opencode.json` is now the normal setup path.
+
+### Manual fallback
+
+If you want to wire the TUI explicitly yourself, or if your environment blocks config writes, you can still add the same package to `tui.json` manually.
 
 ### Verify Installation
 
-After restarting OpenCode, the plugin is working if you see a message like:
+After restarting OpenCode, verify both behaviors:
+
+1. **Server plugin check**: you may see a message like:
 
 > "You appear to have finished but did not call completionSignal. Please call it now."
 
-This means the plugin detected a completion-like response without a `completionSignal` call.
+This means the server plugin detected a completion-like response without a `completionSignal` call.
+
+2. **TUI plugin check**: open the command palette in the TUI and search for **Toggle Autopilot**, or try the slash command **/autopilot**.
+
+If the TUI command does not appear immediately, restart OpenCode once more so the auto-synced `tui.json` entry is picked up.
 
 To check plugin status, use the `healthCheck` tool:
 
@@ -60,11 +66,11 @@ The plugin updates automatically when you restart OpenCode. To pin a specific ve
 
 ### Uninstall
 
-Remove the plugin from the `plugin` array in `opencode.json` and restart OpenCode.
+Remove the plugin from the `plugin` array in both `opencode.json` and `tui.json`, then restart OpenCode.
 
 ## Usage
 
-The plugin is intentionally simple and unobtrusive: once installed it runs automatically. In the TUI, you can also search for **Toggle Autopilot** or use the slash command **/autopilot** after the package is added to `tui.json`.
+The plugin is intentionally simple and unobtrusive: once installed it runs automatically. In the TUI, you can also search for **Toggle Autopilot** or use the slash command **/autopilot** after the automatic config sync has completed.
 
 Behavior summary:
 
