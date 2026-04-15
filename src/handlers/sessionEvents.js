@@ -311,8 +311,8 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
             const meta = sessionState.get(sessionID);
-            const pauseReason = meta?.pauseState?.reason || meta?.autoContinuePaused?.reason;
-            const completionStatus = meta?.completionState?.status;
+            const pauseReason = getPauseReason(meta);
+            const completionStatus = getCompletionStatus(meta);
             if (completionStatus || pauseReason) {
                 if (pauseReason === options.allowPausedReason) {
                     // Allow the prompt that established this paused state to land.
@@ -424,13 +424,13 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 return;
             }
 
-            if (isTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === "completed")) {
+            if (isTerminalCompletion(meta)) {
                 metricsTracker.record(sessionID, "idle.skipped.complete");
                 log("debug", "idle skipped: session completed", { sessionID });
                 return;
             }
 
-            if (isTemporarilyPaused(meta) || (meta.autoContinuePaused && !['completed', 'blocked', 'interrupted'].includes(meta.autoContinuePaused.reason))) {
+            if (isTemporarilyPaused(meta)) {
                 metricsTracker.record(sessionID, "idle.skipped.paused");
                 log("debug", "idle skipped: session temporarily paused", { sessionID });
                 return;

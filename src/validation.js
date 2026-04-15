@@ -9,13 +9,30 @@ let schemaCache = {};
 
 function loadSchema(name) {
   if (schemaCache[name]) return schemaCache[name];
-  const path = join(SCHEMAS_DIR, name);
-  if (!existsSync(path)) {
-    throw new Error(`Schema not found: ${path}`);
+  const schemaPath = join(SCHEMAS_DIR, name);
+
+  if (!existsSync(schemaPath)) {
+    // Provide a helpful, actionable error message instead of a raw exception
+    const msg = `Schema not found: ${schemaPath}\n` +
+      `Expected schema file '${name}' in '${SCHEMAS_DIR}'.\n` +
+      `If this project was installed from npm, ensure the package includes the 'schemas/' directory or run the local setup (e.g. 'npm run setup:local').`;
+    const e = new Error(msg);
+    e.name = "SchemaNotFoundError";
+    throw e;
   }
-  const schema = JSON.parse(readFileSync(path, "utf-8"));
-  schemaCache[name] = schema;
-  return schema;
+
+  try {
+    const raw = readFileSync(schemaPath, "utf-8");
+    const schema = JSON.parse(raw);
+    schemaCache[name] = schema;
+    return schema;
+  } catch (err) {
+    // Wrap parsing/read errors with context so callers get actionable info
+    const msg = `Failed to load or parse schema '${name}' at ${schemaPath}: ${err.message}`;
+    const e = new Error(msg);
+    e.name = "SchemaLoadError";
+    throw e;
+  }
 }
 
 function getType(value) {

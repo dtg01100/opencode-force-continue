@@ -16,6 +16,7 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
             if (sessionID) {
                 const meta = sessionState.get(sessionID) || {};
                 const timestamp = Date.now();
+                // Ensure legacy field exists for backward-compatibility storage
                 if (!("autoContinuePaused" in meta)) {
                     meta.autoContinuePaused = null;
                 }

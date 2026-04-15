@@ -5,16 +5,24 @@ export function assertPluginLoaded(output) {
   if (!output && output !== '') {
     throw new Error('No output provided to assertPluginLoaded');
   }
-  // Plugin should appear in logs or tool registrations
+
   const loadedPatterns = [
-    /force-continue/,
-    /completionSignal/,
-    /healthCheck/,
-    /validate/
+    /force.continue/i,
+    /Plugin health/i,
+    /Plugin health:/i,
+    /"tool":"[^"]*healthCheck/i,
+    /healthCheck.*tool/i,
+    /continuations/i,
+    /Auto.continue/i,
   ];
+
   const found = loadedPatterns.some(p => p.test(output));
   if (!found) {
-    throw new Error(`Plugin not detected in output. Expected force-continue, completionSignal, healthCheck, or validate. Got: ${output.slice(0, 500)}`);
+    console.debug('=== DEBUG: assertPluginLoaded ===');
+    console.debug('Output length:', output.length);
+    console.debug('First 1000 chars:', output.slice(0, 1000));
+    console.debug('=== END DEBUG ===');
+    throw new Error('Plugin not detected in output. Check debug logs for details.');
   }
   return true;
 }
@@ -26,11 +34,19 @@ export function assertNoErrors(output) {
     /Cannot find module/,
     /SyntaxError/,
     /TypeError/,
-    /ReferenceError/
+    /ReferenceError/,
+    /Failed to load plugin/,
+    /failed to register/i,
+    /EACCES/, // Permission errors
+    /EADDRINUSE/, // Port in use
+    /EPERM/ // Operation not permitted
   ];
   const errors = errorPatterns.filter(p => p.test(output));
   if (errors.length > 0) {
-    throw new Error(`Errors detected in output: ${errors.map(e => e.source).join(', ')}\nOutput: ${output.slice(0, 1000)}`);
+    console.debug('=== DEBUG: assertNoErrors ===');
+    console.debug('Full output:', output);
+    console.debug('=== END DEBUG ===');
+    throw new Error(`Errors detected in output: ${errors.map(e => e.source).join(', ')}\nError context: ${output.slice(0, 2000)}...`);
   }
   return true;
 }

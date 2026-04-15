@@ -30,8 +30,8 @@
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run",
-    "test:integration": "vitest run tests/integration/",
-    "test:integration:watch": "vitest tests/integration/",
+    "test:integration": "vitest run --config vitest.config.integration.mjs",
+    "test:integration:watch": "vitest --config vitest.config.integration.mjs",
     "setup:local": "node ./scripts/setup-opencode.mjs",
     "setup:global": "node ./scripts/setup-opencode.mjs --global"
   },

@@ -60,7 +60,7 @@ function ensurePeriodicCleanupStarted() {
     startPeriodicCleanup(60 * 60 * 1000, resolveConfig().sessionTtlMs);
 }
 
-function syncTuiConfigForCurrentInstall(log, ctx = {}) {
+function syncTuiConfigForCurrentInstall(log, ctx = {}, pluginId) {
     if (tuiConfigSyncAttempted) {
         return;
     }
@@ -78,9 +78,11 @@ function syncTuiConfigForCurrentInstall(log, ctx = {}) {
     if (ctx?.directory) addDir(join(ctx.directory, ".opencode"));
     if (ctx?.worktree) addDir(join(ctx.worktree, ".opencode"));
 
+    const effectiveId = pluginId ?? "force-continue";
+
     for (const baseDir of candidateDirs) {
         try {
-            const result = syncTuiConfigFromOpencode(baseDir, id);
+            const result = syncTuiConfigFromOpencode(baseDir, effectiveId);
             if (result.changed) {
                 log("info", "Synced TUI plugin config from opencode.json", {
                     baseDir,
@@ -119,7 +121,11 @@ export const createContinuePlugin = (options = {}) => {
             }
         };
 
-        syncTuiConfigForCurrentInstall(log, ctx);
+        // Pass the plugin id explicitly to avoid any temporal-dead-zone / module
+        // ordering issues where the module-level `id` export may not be
+        // available to the function if it were invoked during module
+        // evaluation. Passing it here guarantees the correct value is used.
+        syncTuiConfigForCurrentInstall(log, ctx, id);
 
         const returnObj = {};
 

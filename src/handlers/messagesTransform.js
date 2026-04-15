@@ -13,10 +13,11 @@ export function createMessagesTransformHandler() {
         if (!resolvedSessionID) return;
 
         const meta = sessionState.get(resolvedSessionID);
-        const tempPauseReason = meta?.pauseState?.reason || meta?.autoContinuePaused?.reason;
-        const completionStatus = meta?.completionState?.status;
+        const { getPauseReason, getCompletionStatus, isTerminalCompletion } = await import('../state.js');
+        const tempPauseReason = getPauseReason(meta);
+        const completionStatus = getCompletionStatus(meta);
         // Check if session is in a terminal state (completionState or legacy autoContinuePaused with terminal reason)
-        const isTerminal = completionStatus || (tempPauseReason && ['completed', 'blocked', 'interrupted'].includes(tempPauseReason));
+        const isTerminal = isTerminalCompletion(meta);
         if (!isTerminal) return;
 
         // SDK Message type is UserMessage | AssistantMessage (no system role).

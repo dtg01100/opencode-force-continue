@@ -40,6 +40,7 @@ export async function spawnOpenCode(options = {}) {
   // Create minimal config with just our plugin
   const pluginFile = join(PROJECT_ROOT, 'force-continue.server.js');
   const config = {
+    "$schema": "https://opencode.ai/config.json",
     plugin: [`force-continue@file://${pluginFile}`]
   };
   await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
@@ -78,6 +79,13 @@ export async function spawnOpenCode(options = {}) {
       ...process.env,
       ...env,
       HOME: tempDir,
+      // Override all XDG dirs so opencode uses a fresh isolated database
+      // (without XDG_DATA_HOME override, opencode finds the running TUI server
+      // in the real ~/.local/share/opencode/opencode.db and hangs instead of
+      // starting its own server)
+      XDG_CONFIG_HOME: join(tempDir, '.config'),
+      XDG_DATA_HOME: join(tempDir, '.local', 'share'),
+      XDG_CACHE_HOME: join(tempDir, '.cache'),
       OPENCODE_CONFIG_DIR: configDir,
       NODE_ENV: 'test'
     },

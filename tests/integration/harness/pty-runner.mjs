@@ -26,6 +26,7 @@ export async function runTUI(options = {}) {
   // Create config with local plugin loaded
   const pluginPath = PROJECT_ROOT;
   const config = {
+    "$schema": "https://opencode.ai/config.json",
     plugin: [`force-continue@file://${pluginPath}`]
   };
   await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
@@ -38,6 +39,9 @@ export async function runTUI(options = {}) {
       ...process.env,
       ...env,
       HOME: tempDir,
+      XDG_CONFIG_HOME: join(tempDir, '.config'),
+      XDG_DATA_HOME: join(tempDir, '.local', 'share'),
+      XDG_CACHE_HOME: join(tempDir, '.cache'),
       OPENCODE_CONFIG_DIR: configDir,
       TERM: 'xterm-256color',
       COLUMNS: '80',

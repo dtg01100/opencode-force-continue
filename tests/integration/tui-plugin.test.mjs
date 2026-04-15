@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { runTUI, canStartTUI } from './harness/pty-runner.mjs';
-import { assertNoErrors, assertAutopilotToggled } from './harness/assertions.mjs';
+import { assertNoErrors } from './harness/assertions.mjs';
 
 describe('TUI Plugin Integration', () => {
   let tui;
@@ -17,30 +17,27 @@ describe('TUI Plugin Integration', () => {
     expect(result.success).toBe(true);
   }, 20000);
 
-  it('should have autopilot command in palette', async () => {
-    tui = await runTUI({ timeout: 20000, commands: ['/autopilot\n'] });
+  it('should run TUI and produce output', async () => {
+    tui = await runTUI({ timeout: 20000, commands: [] });
 
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 10000));
 
     const output = await tui.getOutput();
     const stderr = await tui.getStderr();
 
     assertNoErrors(stderr);
 
-    const hasAutopilot = output.includes('autopilot') || output.includes('Autopilot');
-    expect(hasAutopilot || true).toBe(true);
+    // Should have some output
+    expect(output.length + stderr.length).toBeGreaterThan(0);
   }, 25000);
 
-  it('should toggle autopilot state via slash command', async () => {
+  it('should handle autopilot command in TUI', async () => {
     tui = await runTUI({ timeout: 25000, commands: ['/autopilot\n'] });
 
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 10000));
 
-    const output = await tui.getOutput();
+    const stderr = await tui.getStderr();
 
-    const hasToggleMessage = output.includes('Autopilot enabled') ||
-                              output.includes('Autopilot disabled') ||
-                              output.includes('autopilot');
-    expect(hasToggleMessage || true).toBe(true);
+    assertNoErrors(stderr);
   }, 30000);
 });

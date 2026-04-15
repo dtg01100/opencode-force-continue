@@ -30,7 +30,14 @@ const TEMPORARY_PAUSE_REASONS = new Set([
  * @returns {boolean}
  */
 function checkTerminalCompletion(meta) {
-    return !!(meta?.completionState);
+    if (!meta) return false;
+    // Prefer explicit completionState.status
+    const status = meta?.completionState?.status || meta?.completionState?.reason || null;
+    if (typeof status === 'string' && TERMINAL_COMPLETION_REASONS.has(status)) return true;
+    // Fallback to legacy autoContinuePaused shape
+    const legacy = meta?.autoContinuePaused?.reason || meta?.autoContinuePaused?.status || null;
+    if (typeof legacy === 'string' && TERMINAL_COMPLETION_REASONS.has(legacy)) return true;
+    return false;
 }
 
 /**
@@ -39,7 +46,13 @@ function checkTerminalCompletion(meta) {
  * @returns {boolean}
  */
 function checkTemporarilyPaused(meta) {
-    return !!(meta?.pauseState);
+    if (!meta) return false;
+    const reason = meta?.pauseState?.reason || meta?.pauseState?.status || null;
+    if (typeof reason === 'string' && TEMPORARY_PAUSE_REASONS.has(reason)) return true;
+    // Fallback to legacy autoContinuePaused non-terminal reasons
+    const legacy = meta?.autoContinuePaused?.reason || meta?.autoContinuePaused?.status || null;
+    if (typeof legacy === 'string' && TEMPORARY_PAUSE_REASONS.has(legacy)) return true;
+    return false;
 }
 
 /**
@@ -71,7 +84,7 @@ export function cleanupExpiredSessions() {
     
     for (const [sessionID, meta] of sessionState.entries()) {
         // Skip sessions that are complete - they should be cleaned up via session.deleted
-        if (checkTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed')) {
+        if (checkTerminalCompletion(meta)) {
             continue;
         }
         
@@ -139,7 +152,7 @@ export function getActiveSessionCount() {
     let activeCount = 0;
     const now = Date.now();
     for (const [, meta] of sessionState.entries()) {
-        if (checkTerminalCompletion(meta) || (meta.autoContinuePaused && meta.autoContinuePaused.reason === 'completed')) {
+        if (checkTerminalCompletion(meta)) {
             continue;
         }
         const lastSeen = meta.lastSeen || meta.sessionStartedAt || 0;
@@ -295,7 +308,8 @@ export function isTemporarilyPaused(meta) {
  * @returns {string|null}
  */
 export function getPauseReason(meta) {
-    return meta?.pauseState?.reason || null;
+    if (!meta) return null;
+    return meta?.pauseState?.reason || meta?.autoContinuePaused?.reason || null;
 }
 
 /**
@@ -304,7 +318,8 @@ export function getPauseReason(meta) {
  * @returns {string|null}
  */
 export function getCompletionStatus(meta) {
-    return meta?.completionState?.status || null;
+    if (!meta) return null;
+    return meta?.completionState?.status || meta?.completionState?.reason || meta?.autoContinuePaused?.reason || null;
 }
 
 export function isSubagentSession(sessionID) {

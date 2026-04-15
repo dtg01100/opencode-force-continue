@@ -169,6 +169,7 @@ export function getAutopilotMaxAttempts(config) {
  * @returns {object} Decision with shape: { action: 'resolve_guidance' | 'answer_question' | 'noop', ... }
  */
 export function getAutopilotDecision(meta, config, sessionID, aiAskedQuestion) {
+    // Use the same getAutopilotEnabled semantics: session override -> file -> config
     const autopilotEnabled = getAutopilotEnabled(config, sessionID);
     if (!autopilotEnabled) {
         return { action: 'noop', reason: 'autopilot_disabled' };
@@ -271,4 +272,3 @@ export async function runAutopilotStep(decision, ctx, sessionID, contextText) {
 
     return false;
 }
-

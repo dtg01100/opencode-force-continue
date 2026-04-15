@@ -49,6 +49,10 @@ export function createHybridStore(inMemoryMap, fileStore) {
     return {
         get(key) {
             if (inMemoryMap.has(key)) return inMemoryMap.get(key);
+            // Accept file store values, but normalize returned objects to
+            // ensure callers relying on legacy shapes (autoContinuePaused)
+            // still work. We don't mutate stored data here; normalization
+            // is the responsibility of state helpers.
             if (fileStore) return fileStore.get(key);
             return undefined;
         },
