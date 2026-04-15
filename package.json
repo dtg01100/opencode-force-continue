@@ -30,11 +30,15 @@
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run",
+    "test:integration": "vitest run tests/integration/",
+    "test:integration:watch": "vitest tests/integration/",
     "setup:local": "node ./scripts/setup-opencode.mjs",
     "setup:global": "node ./scripts/setup-opencode.mjs --global"
   },
   "devDependencies": {
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "typescript": "^5.1.6",
+    "@types/node": "^18.16.19"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.3.17"
