@@ -19,7 +19,7 @@ export async function runTUI(options = {}) {
   } = options;
 
   // Create isolated temp directory
-  const tempDir = await mkdtemp(join(tmpdir(), 'opencode-tui-test-'));
+	const tempDir = await mkdtemp(join(tmpdir(), 'opencode-test-'));
   const configDir = join(tempDir, '.opencode');
   await mkdir(configDir, { recursive: true });
 
@@ -58,14 +58,17 @@ export async function runTUI(options = {}) {
     stderr += data.toString();
   });
 
-  // Send commands with delays
-  const sendCommands = async () => {
-    for (const cmd of commands) {
-      await new Promise(r => setTimeout(r, 500)); // Wait for TUI to be ready
-      proc.stdin.write(cmd);
-    }
-  };
-  sendCommands().catch(() => {});
+	// Send commands with delays
+	const sendCommands = async () => {
+		for (const cmd of commands) {
+			// 500ms delay to allow TUI to process previous input
+			await new Promise(r => setTimeout(r, 500));
+			proc.stdin.write(cmd);
+		}
+	};
+	sendCommands().catch(e => {
+		console.debug('TUI command send error:', e.message);
+	});
 
   const exitCode = new Promise((resolve) => {
     proc.on('close', (code) => {
@@ -73,12 +76,17 @@ export async function runTUI(options = {}) {
     });
   });
 
-  const timeoutId = setTimeout(() => {
-    if (!killed) {
-      killed = true;
-      proc.kill('SIGTERM');
-    }
-  }, timeout);
+	const timeoutId = setTimeout(() => {
+		if (!killed) {
+			killed = true;
+			proc.kill('SIGTERM');
+			setTimeout(() => {
+				if (!killed) {
+					proc.kill('SIGKILL');
+				}
+			}, 5000);
+		}
+	}, timeout);
 
   return {
     process: proc,
@@ -118,15 +126,13 @@ export async function runTUI(options = {}) {
  * Simplified TUI test that just checks if OpenCode starts
  */
 export async function canStartTUI(timeout = 10000) {
-  const tui = await runTUI({ timeout });
-  try {
-    // Wait a bit for TUI to initialize
-    await new Promise(r => setTimeout(r, 2000));
-    const output = await tui.getOutput();
-    tui.kill();
-    return { success: true, output };
-  } catch (e) {
-    tui.kill();
-    throw e;
-  }
+	const tui = await runTUI({ timeout });
+	try {
+		// Wait a bit for TUI to initialize
+		await new Promise(r => setTimeout(r, 2000));
+		const output = await tui.getOutput();
+		return { success: true, output };
+	} finally {
+		tui.kill();
+	}
 }
