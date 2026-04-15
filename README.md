@@ -83,7 +83,7 @@ Behavior summary:
 7. Detects loops in model responses and tool calls, and breaks them with targeted prompts.
 8. Injects a system message into completed sessions via `experimental.chat.messages.transform` to prevent the model from responding to auto-continue nudges after completion.
 9. Applies an optional cooldown (`cooldownMs`) between idle events to avoid rapid-fire prompts.
-10. Skips auto-continue when paused via `pauseAutoContinue`, awaiting guidance via `requestGuidance`, or when auto-continue is disabled.
+10. Skips auto-continue when paused via `pauseAutoContinue`, terminal `completionSignal` states, circuit-breaker pauses, canceled parts, or when auto-continue is disabled. A pending `requestGuidance` is recorded and included in future nudges, but does not pause auto-continue on its own.
 
 ## Configuration
 
@@ -155,7 +155,7 @@ Key components (in `force-continue.server.js`):
   - `completionSignal` — call this from the model to indicate the task is finished. Accepts `status` (e.g. `completed`, `blocked`, `interrupted`) and optional `reason`.
   - `validate` — checks that the plugin environment is wired correctly; supports `mode='probe'` to send a test prompt to a session.
   - `statusReport` — lets the model report progress without ending the session, resetting the continuation counter.
-  - `requestGuidance` — lets the model ask the user for clarification, pausing auto-continue until the user responds.
+  - `requestGuidance` — lets the model ask the user for clarification. Records the request and includes it in future nudges, but does not pause auto-continue on its own.
   - `pauseAutoContinue` — temporarily suspends auto-continue prompts while the model plans.
   - `healthCheck` — returns plugin metrics, session counts, autopilot status, and configuration.
   - `setAutopilot` — enables or disables autopilot mode globally or per-session.
@@ -170,12 +170,12 @@ Key components (in `force-continue.server.js`):
 
 Event flow (session.idle handling simplified):
 
-1. On `session.idle`, the handler first checks if auto-continue is disabled or if `autoContinuePaused` is set — skipping early if either applies. `autoContinuePaused` covers all pause reasons: `completionSignal`, `pauseAutoContinue`, `requestGuidance`, circuit breaker, and canceled parts.
+1. On `session.idle`, the handler first checks if auto-continue is disabled or if `autoContinuePaused` is set — skipping early if either applies. `autoContinuePaused` covers terminal `completionSignal` states, `pauseAutoContinue`, circuit breaker, and canceled parts.
 2. If a cooldown is configured (`cooldownMs > 0`), the handler skips if insufficient time has passed since the last idle event.
 3. If task-related hooks are available (task babysitter), the plugin defers to them.
 4. The plugin attempts to query unfinished tasks using several hook candidates (`getTasksByParentSession` from hooks or context). If unfinished tasks are found, it sends a prompt listing them and asks the model to continue or call `completionSignal`.
 5. If no tasks are found, it fetches recent messages. If the last message role is `assistant`, it increments a `continuationCount` and sends either a plain `Continue` prompt, a completion nudge (if completion keywords detected), a loop-break prompt (if loop detected), or escalation prompts when thresholds are exceeded.
-6. When a `completionSignal` tool call, `pauseAutoContinue`, `requestGuidance`, circuit breaker, or canceled part sets `autoContinuePaused`, nudges are suppressed. When the user sends a message, `chat.message` clears `autoContinuePaused` and nudges resume.
+6. When a `completionSignal` tool call, `pauseAutoContinue`, circuit breaker, or canceled part sets `autoContinuePaused`, nudges are suppressed. A pending `requestGuidance` remains in session state and is included in continue prompts until the user sends a new message or autopilot resolves it.
 7. On `session.deleted`, session entries are cleaned from in-memory maps.
 
 Helpers and extension points:
@@ -228,7 +228,7 @@ statusReport(progress='Completed 3 of 5 steps', nextSteps='Finish remaining', bl
 
 ### requestGuidance
 
-Ask the user for clarification. Pauses auto-continue until the user responds.
+Ask for clarification while keeping auto-continue active. The plugin records the pending guidance request, includes it in future nudges, and only pauses if an autopilot fallback or another explicit pause condition sets `autoContinuePaused`.
 
 ```
 requestGuidance(question='Should I use approach A or B?', context?)

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, copyFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -10,6 +10,7 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
 /**
  * Spawns an isolated OpenCode instance for testing
+ * Uses bash to redirect output to a file for reliable capture
  * @param {Object} options
  * @param {string} options.mode - 'run' for non-interactive, 'tui' for interactive
  * @param {string[]} options.args - Additional arguments
@@ -19,36 +20,59 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 export async function spawnOpenCode(options = {}) {
   const { mode = 'run', args = [], timeout = 30000, env = {} } = options;
 
-  // Create isolated temp directory
+  // Create isolated temp directory for test files
   const tempDir = await mkdtemp(join(tmpdir(), 'opencode-test-'));
-  const configDir = join(tempDir, '.opencode');
-  await mkdir(configDir, { recursive: true });
-
-  // Create config with local plugin loaded
-  const pluginPath = PROJECT_ROOT;
-  const config = {
-    plugin: [`force-continue@file://${pluginPath}`]
-  };
-  await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
-
-  // Copy test project to temp dir
-  const testProjectSrc = join(FIXTURES_DIR, 'test-project');
   const testProjectDest = join(tempDir, 'test-project');
   await mkdir(testProjectDest, { recursive: true });
 
+  // Copy test project files
+  const testProjectSrc = join(FIXTURES_DIR, 'test-project');
   const sampleContent = await import('fs/promises').then(fs =>
     fs.readFile(join(testProjectSrc, 'sample.txt'), 'utf-8')
   );
   await writeFile(join(testProjectDest, 'sample.txt'), sampleContent);
 
-  // Build command
-  const command = mode === 'tui' ? 'opencode' : 'opencode';
-  const commandArgs = mode === 'run'
-    ? ['run', '--format', 'json', ...args]
-    : args;
+  // Create isolated config directory with minimal config
+  // opencode looks for config in ~/.config/opencode/
+  const configDir = join(tempDir, '.config', 'opencode');
+  await mkdir(configDir, { recursive: true });
 
-  // Spawn with isolated environment
-  const proc = spawn(command, commandArgs, {
+  // Create minimal config with just our plugin
+  const pluginFile = join(PROJECT_ROOT, 'force-continue.server.js');
+  const config = {
+    plugin: [`force-continue@file://${pluginFile}`]
+  };
+  await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
+
+  // Copy auth data to preserve credentials (needed for API access)
+  const realAuthDir = join(process.env.HOME, '.local', 'share', 'opencode');
+  const testAuthDir = join(tempDir, '.local', 'share', 'opencode');
+  await mkdir(testAuthDir, { recursive: true });
+  try {
+    await copyFile(
+      join(realAuthDir, 'auth.json'),
+      join(testAuthDir, 'auth.json')
+    );
+  } catch {
+    // Auth might not exist - opencode may still work with fallback providers
+  }
+
+  // Output file to capture stdout
+  const outputFile = join(tempDir, 'output.txt');
+  const stderrFile = join(tempDir, 'stderr.txt');
+
+  // Build command based on mode
+  let commandStr;
+  if (mode === 'tui') {
+    commandStr = `opencode ${args.join(' ')}`;
+  } else {
+    commandStr = `opencode run --format json ${args.join(' ')}`;
+  }
+
+  // Use bash to run command and redirect output
+  const bashCmd = `${commandStr} > '${outputFile}' 2> '${stderrFile}'`;
+
+  const proc = spawn('bash', ['-c', bashCmd], {
     cwd: testProjectDest,
     env: {
       ...process.env,
@@ -60,17 +84,7 @@ export async function spawnOpenCode(options = {}) {
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
-  let stdout = '';
-  let stderr = '';
   let killed = false;
-
-  proc.stdout.on('data', (data) => {
-    stdout += data.toString();
-  });
-
-  proc.stderr.on('data', (data) => {
-    stderr += data.toString();
-  });
 
   const exitCode = new Promise((resolve) => {
     proc.on('close', (code) => {
@@ -94,11 +108,21 @@ export async function spawnOpenCode(options = {}) {
     process: proc,
     tempDir,
     testProjectDir: testProjectDest,
+    outputFile,
+    stderrFile,
     async getOutput() {
-      return stdout;
+      try {
+        return await readFile(outputFile, 'utf-8');
+      } catch {
+        return '';
+      }
     },
     async getStderr() {
-      return stderr;
+      try {
+        return await readFile(stderrFile, 'utf-8');
+      } catch {
+        return '';
+      }
     },
     async waitForExit() {
       clearTimeout(timeoutId);

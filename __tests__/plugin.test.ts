@@ -1187,6 +1187,31 @@ describe('ContinuePlugin', () => {
       expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
 
+    it('should include pending guidance details in continue nudges', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'guidance-prompt-session' } } } });
+
+      await plugin.tool.requestGuidance.execute(
+        { question: 'Should I use approach A or B?', context: 'Both have tradeoffs', options: 'A,B' },
+        { sessionID: 'guidance-prompt-session' } as any
+      );
+
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still waiting' }] }]
+      });
+
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'guidance-prompt-session' } } });
+
+      const promptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+      expect(promptArg.body.parts[0].text).toContain('You have a pending guidance request:');
+      expect(promptArg.body.parts[0].text).toContain('Q: Should I use approach A or B?');
+      expect(promptArg.body.parts[0].text).toContain('Context: Both have tradeoffs');
+      expect(promptArg.body.parts[0].text).toContain('Options: A,B');
+    });
+
     it('should not nudge when AI asks a question in text and autopilot is off', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();
