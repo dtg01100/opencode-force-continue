@@ -13,6 +13,8 @@ export function createChatMessageHandler() {
             meta.toolCallHistory = [];
             meta.errorCount = 0;
             meta.awaitingGuidance = null;
+            meta.aiCalledGuidanceTool = false;
+            meta.handledGuidanceQuestion = null;
             meta.toolLoopDetected = false;
             meta.autopilotAttempts = 0;
             // Clear both pause and completion states - user interaction means they want to resume

@@ -30,6 +30,28 @@ function extractQuestions(text) {
     return matches.map(s => s.trim()).filter(s => s.length > 0 && WAITING_INDICATORS.test(s));
 }
 
+function normalizeQuestionText(text) {
+    return String(text || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[?!.\s]+$/g, "")
+        .trim();
+}
+
+function matchesHandledGuidanceQuestion(contextText, handledQuestion) {
+    if (!contextText || !handledQuestion) return false;
+    const normalizedHandled = normalizeQuestionText(handledQuestion);
+    if (!normalizedHandled) return false;
+    const questions = extractQuestions(contextText);
+    if (questions.length === 0) return false;
+    return questions.every((question) => {
+        const normalizedQuestion = normalizeQuestionText(question);
+        return normalizedQuestion === normalizedHandled
+            || normalizedQuestion.includes(normalizedHandled)
+            || normalizedHandled.includes(normalizedQuestion);
+    });
+}
+
 function getLastAssistantText(messages) {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
@@ -225,8 +247,28 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
 
             const taskSummary = hasTasks ? unfinishedTasks.map(t => `- [${t.status}] ${t.title || t.id}`).join("\n") : null;
 
-            // Check if AI asked a question and is waiting for user input
+            // Check if autopilot is enabled (needed for the decision layer).
+            const autopilotEnabled = getAutopilotEnabled(config, sessionID);
+
+            // Detect question-shaped assistant text even when autopilot is off so
+            // idle nudges stay blocked while the model is waiting for input.
             const aiAskedQuestion = containsQuestion(contextText);
+            const sameHandledGuidanceQuestion = meta.aiCalledGuidanceTool
+                && !meta.awaitingGuidance
+                && aiAskedQuestion
+                && matchesHandledGuidanceQuestion(contextText, meta.handledGuidanceQuestion);
+
+            if (meta.aiCalledGuidanceTool && !meta.awaitingGuidance && !sameHandledGuidanceQuestion) {
+                meta.aiCalledGuidanceTool = false;
+                meta.handledGuidanceQuestion = null;
+                sessionState.set(sessionID, meta);
+            }
+
+            if (sameHandledGuidanceQuestion) {
+                metricsTracker.record(sessionID, "idle.skipped.awaiting.answer");
+                log("info", "Idle skipped: requestGuidance already handled this question", { sessionID });
+                return;
+            }
 
             // Autopilot decision layer: check if autopilot should take action
             const decision = getAutopilotDecision(meta, config, sessionID, aiAskedQuestion);
@@ -242,7 +284,6 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             }, sessionID, contextText);
 
             if (autopilotAction) {
-                // Autopilot took action, don't proceed with nudge
                 return;
             }
 
@@ -302,13 +343,13 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
     };
 
     const sendPrompt = async (sessionID, text, options = {}) => {
-        if (!text || typeof text !== 'string') return;
+        if (!text || typeof text !== 'string') return false;
         const nudgeDelayMs = getNudgeDelayMs();
         if (nudgeDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, nudgeDelayMs));
             if (!sessionState.has(sessionID)) {
                 log("debug", "nudge suppressed after delay: session deleted", { sessionID });
-                return;
+                return false;
             }
             const meta = sessionState.get(sessionID);
             const pauseReason = getPauseReason(meta);
@@ -318,7 +359,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                     // Allow the prompt that established this paused state to land.
                 } else {
                     log("debug", "nudge suppressed after delay", { sessionID, reason: completionStatus || pauseReason });
-                    return;
+                    return false;
                 }
             }
         }
@@ -327,6 +368,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 path: { id: sessionID },
                 body: { parts: [{ type: "text", text }] }
             });
+            return true;
         } catch (e) {
             // Record prompt error and also increment session-level error count
             // immediately. Some error paths may not bubble cleanly to the
@@ -354,6 +396,7 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
             // Do NOT rethrow — error is fully handled above (error count incremented,
             // circuit breaker checked). Rethrowing would cause the outer catch in
             // handleIdle to double-count the error.
+            return false;
         }
     };
 
@@ -369,6 +412,8 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
                 meta.continuationCount = 0;
                 meta.toolCallHistory = [];
                 meta.errorCount = 0;
+                meta.aiCalledGuidanceTool = false;
+                meta.handledGuidanceQuestion = null;
                 // Clear both new and legacy pause/completion states
                 meta.pauseState = null;
                 meta.completionState = null;

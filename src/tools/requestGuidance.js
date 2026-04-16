@@ -22,6 +22,8 @@ export function createRequestGuidanceTool(ctx, config, client, log) {
                 }
                 meta.awaitingGuidance = { question, context, options, timestamp };
                 meta.autopilotAttempts = meta.autopilotAttempts || 0;
+                meta.aiCalledGuidanceTool = true;
+                meta.handledGuidanceQuestion = question;
                 sessionState.set(sessionID, meta);
                 log("info", "Guidance requested", { sessionID, question });
 

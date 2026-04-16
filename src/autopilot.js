@@ -251,7 +251,7 @@ export function getAutopilotDecision(meta, config, sessionID, aiAskedQuestion) {
     }
 
     // Check if there's pending guidance to resolve
-    if (meta.awaitingGuidance && !aiAskedQuestion) {
+    if (meta.awaitingGuidance) {
         return {
             action: 'resolve_guidance',
             question: meta.awaitingGuidance.question,
@@ -312,7 +312,13 @@ export async function runAutopilotStep(decision, ctx, sessionID, contextText) {
         );
         metricsTracker.record(sessionID, "autopilot.guidance.resolution");
         log("info", "Autopilot resolving pending guidance", { sessionID, question: decision.question });
-        await sendPrompt(sessionID, prompt);
+        const promptSent = await sendPrompt(sessionID, prompt);
+        if (promptSent) {
+            const currentMeta = sState.get(sessionID) || meta;
+            currentMeta.awaitingGuidance = null;
+            currentMeta.handledGuidanceQuestion = decision.question;
+            sState.set(sessionID, currentMeta);
+        }
         return true;
     }
 

@@ -1344,6 +1344,128 @@ describe('autopilot', () => {
       expect(result).toBe('Autopilot resolved guidance question.');
     });
 
+  it('should clear requestGuidance question state after immediate autopilot resolution', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Should I use A or B?', context: 'Building a feature', options: 'A or B' },
+      { sessionID: 'resolved-guidance-session' } as any
+    );
+
+    mockClient.session.promptAsync.mockClear();
+    mockClient.session.messages.mockResolvedValue({
+      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working on the next step.' }] }]
+    });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'resolved-guidance-session' } } });
+
+    const promptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+    expect(promptArg.body.parts[0].text).toContain('Continue working on your current task.');
+    expect(promptArg.body.parts[0].text).not.toContain('AUTONOMOUS DECISION REQUIRED');
+  });
+
+  it('should not auto-answer the same question on idle after requestGuidance already triggered autopilot', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Should I use A or B?' },
+      { sessionID: 'same-question-session' } as any
+    );
+
+    mockClient.session.promptAsync.mockClear();
+    mockClient.session.messages.mockResolvedValue({
+      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Should I use A or B?' }] }]
+    });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'same-question-session' } } });
+
+    expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('should still auto-answer a different later question after requestGuidance already triggered autopilot', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Should I use A or B?' },
+      { sessionID: 'different-question-session' } as any
+    );
+
+    mockClient.session.promptAsync.mockClear();
+    mockClient.session.messages.mockResolvedValue({
+      data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Should I delete the temp file now?' }] }]
+    });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'different-question-session' } } });
+
+    const promptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+    expect(promptArg.body.parts[0].text).toContain('Question: You asked: Should I delete the temp file now?');
+  });
+
+  it('should still auto-answer when a later message repeats the handled question and adds a new one', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Should I use A or B?' },
+      { sessionID: 'mixed-question-session' } as any
+    );
+
+    mockClient.session.promptAsync.mockClear();
+    mockClient.session.messages.mockResolvedValue({
+      data: [{
+        role: 'assistant',
+        parts: [{
+          type: 'text',
+          text: 'Should I use A or B? Also, should I delete the temp file now?'
+        }]
+      }]
+    });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'mixed-question-session' } } });
+
+    const promptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+    expect(promptArg.body.parts[0].text).toContain('should I delete the temp file now?');
+  });
+
   it('should fall back after max autopilot attempts', async () => {
     const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
     resetAutopilotState();
@@ -1571,6 +1693,47 @@ describe('autopilot', () => {
       path: { id: 'pending-guidance-session' },
       body: { parts: [{ type: 'text', text: expect.stringContaining('AUTONOMOUS DECISION REQUIRED') }] }
     });
+    const promptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+    expect(promptArg.body.parts[0].text).toContain('Question: Which approach should I use?');
+    expect(promptArg.body.parts[0].text).not.toContain('Question: You asked: Still working...');
+  });
+
+  it('should clear pending guidance after idle autopilot resolves it once', async () => {
+    const { createContinuePlugin, resetAutopilotState } = await import('../force-continue.server.js');
+    resetAutopilotState();
+    mockClient.session.promptAsync = vi.fn().mockRejectedValue(new Error('Network error'));
+    const createPlugin = createContinuePlugin({
+      autopilotEnabled: true,
+      autopilotMaxAttempts: 3
+    });
+    const plugin = await createPlugin(mockCtx);
+
+    const { writeAutopilotState } = await import('../src/autopilot.js');
+    writeAutopilotState({ enabled: true, timestamp: Date.now() });
+
+    await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'pending-guidance-cleared-session' } } } });
+
+    const toolDef = plugin.tool.requestGuidance;
+    await toolDef.execute(
+      { question: 'Which approach should I use?' },
+      { sessionID: 'pending-guidance-cleared-session' } as any
+    );
+
+    mockClient.session.promptAsync = vi.fn().mockResolvedValue({});
+    mockClient.session.messages
+      .mockResolvedValueOnce({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Still working...' }] }]
+      })
+      .mockResolvedValueOnce({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Implemented the next step.' }] }]
+      });
+
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pending-guidance-cleared-session' } } });
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'pending-guidance-cleared-session' } } });
+
+    const secondPromptArg = mockClient.session.promptAsync.mock.calls.at(-1)?.[0];
+    expect(secondPromptArg.body.parts[0].text).toContain('Continue working on your current task.');
+    expect(secondPromptArg.body.parts[0].text).not.toContain('Question: Which approach should I use?');
   });
   });
 
