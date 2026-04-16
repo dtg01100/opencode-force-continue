@@ -15,7 +15,7 @@ const COMPLETION_KEYWORDS = /\b(done|finished|complete|all set|that.?s all|all d
 
 // Detect if text contains a question that suggests the AI is waiting for user input
 const QUESTION_PATTERN = /\?/g;
-const WAITING_INDICATORS = /\b(should i|would you|do you want|can i|what do you|which|how would you|are you sure|does this|would this|option [a-z]?|[a-z]\)|\(?[a-z][\).])\b/i;
+const WAITING_INDICATORS = /\b(do you|can i|should i|could you|would you|what (do|can|should|would|could)|how (can|do|would|could)|are you|does this|would this|option [a-z]?|[a-z]\)|\(?[a-z][\).])\b/i;
 
 function containsQuestion(text) {
     if (!text) return false;
