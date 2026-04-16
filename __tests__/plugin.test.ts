@@ -1266,6 +1266,44 @@ describe('ContinuePlugin', () => {
 
       expect(mockClient.session.promptAsync).toHaveBeenCalled();
     });
+
+    it('should resume nudges after user responds to completed session', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      await plugin.event({ event: { type: 'session.created', properties: { info: { id: 'completion-resume-session' } } } });
+
+      // AI completes the task
+      await plugin.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            sessionID: 'completion-resume-session',
+            part: { type: 'tool', tool: 'completionSignal', state: { status: 'completed' } }
+          }
+        }
+      });
+
+      // Session becomes idle - no nudge should be sent (session is completed)
+      mockClient.session.promptAsync.mockClear();
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'Task completed' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'completion-resume-session' } } });
+      expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
+
+      // User responds - this should clear completionState
+      await plugin['chat.message']({ sessionID: 'completion-resume-session' });
+
+      // Session becomes idle - nudge SHOULD be sent
+      mockClient.session.promptAsync.mockClear();
+      mockClient.session.messages.mockResolvedValue({
+        data: [{ role: 'assistant', parts: [{ type: 'text', text: 'User responded' }] }]
+      });
+      await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 'completion-resume-session' } } });
+      expect(mockClient.session.promptAsync).toHaveBeenCalled();
+    });
   });
 
 describe('autopilot', () => {
@@ -2556,7 +2594,7 @@ describe('experimental.chat.messages.transform', () => {
     mockClient = { session: { messages: vi.fn(), promptAsync: vi.fn() } };
   });
 
-  it('should inject completion message when autoContinuePaused is set', async () => {
+  it('should not inject completion message when last message is from user (user wants to continue)', async () => {
     const { createContinuePlugin, readState } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin({ client: mockClient });
@@ -2573,12 +2611,12 @@ describe('experimental.chat.messages.transform', () => {
       }
     });
 
-    // SDK type: input is {} — sessionID is derived from messages[0].info.sessionID
+    // When the last message is from the user, they've signaled they want to continue.
+    // The completion message should NOT be injected - let the model respond.
     const messages: any[] = [{ info: { sessionID: 'completion-msg-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
     await plugin['experimental.chat.messages.transform']({}, { messages });
 
-    expect(messages.length).toBe(2);
-    expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
+    expect(messages.length).toBe(1); // No completion message injected
   });
 
   it('should not modify messages when autoContinuePaused is null', async () => {
@@ -2611,7 +2649,7 @@ describe('experimental.chat.messages.transform', () => {
     expect(messages.length).toBe(1);
   });
 
-  it('should inject completion message for blocked completionSignal sessions', async () => {
+  it('should not inject completion message for blocked sessions when last message is from user', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin({ client: mockClient });
@@ -2621,14 +2659,14 @@ describe('experimental.chat.messages.transform', () => {
       { sessionID: 'blocked-completion-msg-session' } as any
     );
 
+    // When last message is from user, don't inject completion message
     const messages: any[] = [{ info: { sessionID: 'blocked-completion-msg-session', role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
     await plugin['experimental.chat.messages.transform']({}, { messages });
 
-    expect(messages.length).toBe(2);
-    expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
+    expect(messages.length).toBe(1); // No completion message injected
   });
 
-  it('should fall back to params.sessionID when messages do not carry one', async () => {
+  it('should fall back to params.sessionID and not inject when last message is from user', async () => {
     const { createContinuePlugin } = await import('../force-continue.server.js');
     const createPlugin = createContinuePlugin();
     const plugin = await createPlugin({ client: mockClient });
@@ -2638,11 +2676,11 @@ describe('experimental.chat.messages.transform', () => {
       { sessionID: 'params-sessionid-msg-session' } as any
     );
 
+    // Last message is from user - don't inject completion message
     const messages: any[] = [{ info: { role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }];
     await plugin['experimental.chat.messages.transform']({ sessionID: 'params-sessionid-msg-session' } as any, { messages });
 
-    expect(messages.length).toBe(2);
-    expect(messages[1].parts[0].text).toContain('COMPLETION ALREADY REACHED');
+    expect(messages.length).toBe(1); // No completion message injected
   });
 
   it('should not modify messages when messages is not an array', async () => {

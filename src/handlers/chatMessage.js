@@ -1,7 +1,8 @@
 import { sessionState, clearPauseState, clearCompletionState } from "../state.js";
 
 export function createChatMessageHandler() {
-    return async ({ sessionID } = {}) => {
+    return async (params = {}) => {
+        const sessionID = params?.sessionID || params?.params?.sessionID;
         if (!sessionID || typeof sessionID !== "string") return;
         try {
             const meta = sessionState.get(sessionID) || {};

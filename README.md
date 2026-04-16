@@ -78,13 +78,13 @@ The plugin is intentionally simple and unobtrusive: once installed it runs autom
 Behavior summary:
 
 1. Injects a system message asking the model to call `completionSignal` when a task is complete, treating it as a hard termination.
-2. Tracks per-session state in-memory. Completion state is set by `session.created` (incomplete) and `completionSignal` (complete), but `chat.message` does not reset it.
+2. Tracks per-session state in-memory. Completion state is set by `session.created` (incomplete) and `completionSignal` (complete), and is cleared by `chat.message` so nudges can resume when user responds.
 3. If a session becomes idle without a `completionSignal`, the plugin will send a short "Continue" prompt to encourage the model to finish.
 4. If available, the plugin will consult task hooks (a babysitter or task-query hook) before auto-continuing to avoid interrupting legitimate pauses.
 5. When the model calls `completionSignal`, the plugin stops auto-continuing for that session. Duplicate calls are rejected.
 6. Escalates prompts progressively if the model keeps stopping without signaling completion.
 7. Detects loops in model responses and tool calls, and breaks them with targeted prompts.
-8. Injects a system message into completed sessions via `experimental.chat.messages.transform` to prevent the model from responding to auto-continue nudges after completion.
+8. Injects a system message into completed sessions via `experimental.chat.messages.transform` to prevent the model from responding to auto-continue nudges after completion. However, if the user has sent a message, the injection is skipped — the user's message is a signal to continue.
 9. Applies an optional cooldown (`cooldownMs`) between idle events to avoid rapid-fire prompts.
 10. Skips auto-continue when paused via `pauseAutoContinue`, terminal `completionSignal` states, circuit-breaker pauses, canceled parts, or when auto-continue is disabled. A pending `requestGuidance` is recorded and included in future nudges, but does not pause auto-continue on its own.
 
@@ -163,9 +163,9 @@ Key components (in `force-continue.server.js`):
   - `healthCheck` — returns plugin metrics, session counts, autopilot status, and configuration.
   - `setAutopilot` — enables or disables autopilot mode globally or per-session.
 - Message & event handlers:
-  - `chat.message` — updates per-session lastSeen, resets continuation counters, and clears paused/guidance state. Does NOT reset completion state — `completionSignal` is a hard termination.
+  - `chat.message` — updates per-session lastSeen, resets continuation counters, and clears all state (including completion state) to allow nudges to resume when user responds.
   - `experimental.chat.system.transform` — injects a system instruction telling the model to call `completionSignal` when finished, with explicit instructions to treat it as a hard termination.
-  - `experimental.chat.messages.transform` — injects a system message into completed sessions instructing the model to remain silent and not respond to further prompts.
+  - `experimental.chat.messages.transform` — injects a system message into completed sessions instructing the model to remain silent. However, if the last message is from a user, no message is injected — the user has signaled they want to continue.
   - `tool.execute.before` — blocks dangerous commands during auto-continue sessions.
   - `tool.execute.after` — tracks tool call history, file modifications, and detects tool call loops.
   - `event` — the main event handler that reacts to `session.created`, `message.part.updated` (used to detect `completionSignal` tool calls and canceled parts), `session.idle`, `session.deleted`, and `file.edited` events.

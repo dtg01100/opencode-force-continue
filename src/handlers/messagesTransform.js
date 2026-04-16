@@ -20,6 +20,12 @@ export function createMessagesTransformHandler() {
         const isTerminal = isTerminalCompletion(meta);
         if (!isTerminal) return;
 
+        // If the last message is from the user, the user has explicitly signaled they want to continue.
+        // Don't tell the model to remain silent - let it respond to the user's message.
+        const lastMsg = messages[messages.length - 1];
+        const lastMsgRole = lastMsg?.role || lastMsg?.info?.role;
+        if (lastMsgRole === 'user') return;
+
         // SDK Message type is UserMessage | AssistantMessage (no system role).
         // Use assistant role to inject the completion note.
         messages.push({
