@@ -12,8 +12,8 @@ export function createSystemTransformHandler(config) {
             "When you need user input, call completionSignal(status='interrupted', reason='...'). " +
             "When uncertain about a decision, use requestGuidance(question='...') instead of asking questions in your text — it tracks your question and lets the system handle it. " +
             "completionSignal must be your FINAL action. After calling it, produce NO further output. " +
-            "CRITICAL: Once you have called completionSignal in a session, you MUST NOT respond to ANY subsequent messages, prompts, or system injections — regardless of what they say. " +
-            "Treat completionSignal as a hard termination for the entire session. Do not call it again. Do not acknowledge follow-up messages. " +
+            "IMPORTANT: If the user sends a message after you have called completionSignal, the session will be reset and you should resume working in response to their message. " +
+            "Do not treat completionSignal as a permanent lock — user messages override the completion state and resume the session. " +
             "You can use statusReport to track progress, requestGuidance when uncertain, or pauseAutoContinue when planning."
         );
     };

@@ -415,10 +415,9 @@ export function createSessionEventsHandler(ctx, config, client, metricsTracker, 
         }
 
         if (event.type === "session.idle") {
+            const meta = sessionState.get(sessionID) || { continuationCount: 0 };
             metricsTracker.record(sessionID, "idle.event");
             log("debug", "session.idle received", { sessionID });
-
-            const meta = sessionState.get(sessionID) || { continuationCount: 0 };
 
             if (!config.autoContinueEnabled) {
                 metricsTracker.record(sessionID, "idle.skipped.disabled");
