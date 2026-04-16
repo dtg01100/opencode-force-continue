@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tui } from '../force-continue.tui.js';
 import { resetAutopilotState } from '../src/autopilot.js';
-import { sessionState, clearNextSessionAutopilotEnabled } from '../src/state.js';
+import { sessionState, clearNextSessionAutopilotEnabled, peekNextSessionAutopilotEnabled } from '../src/state.js';
 
 function resolveCommands(commandsOrProvider: any) {
   if (typeof commandsOrProvider === 'function') {
@@ -179,5 +179,63 @@ describe('TUI refresh on toggle', () => {
     expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is OFF');
 
     expect(triggeredTitles).toEqual(['Toggle Autopilot', 'Toggle Autopilot']);
+  });
+
+  it('host trigger toggles next-session autopilot from the home route', async () => {
+    let registrations: { id: number; commands: any }[] = [];
+    let nextID = 1;
+    const toastMessages: string[] = [];
+
+    const resolveLatestCommand = (value: string) => {
+      for (let i = registrations.length - 1; i >= 0; i--) {
+        const entry = registrations[i];
+        if (!entry) continue;
+        const hit = resolveCommands(entry.commands).find((cmd: any) => cmd.value === value);
+        if (hit) return hit;
+      }
+      return undefined;
+    };
+
+    const mockApi: any = {
+      command: {
+        register: (commands: any) => {
+          const id = nextID++;
+          registrations.push({ id, commands });
+          return () => {
+            registrations = registrations.filter((entry) => entry.id !== id);
+          };
+        },
+        trigger: (value: string) => {
+          const cmd = resolveLatestCommand(value);
+          if (!cmd) return;
+          cmd.onSelect?.();
+        },
+      },
+      ui: {
+        toast: ({ message }: any) => {
+          toastMessages.push(message);
+        },
+      },
+      route: {
+        current: { name: 'home' },
+      },
+    };
+
+    await tui(mockApi);
+    expect(resolveLatestCommand('force-continue:autopilot')?.title).toBe('Toggle Autopilot');
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is OFF');
+
+    mockApi.command.trigger('force-continue:autopilot');
+    expect(peekNextSessionAutopilotEnabled()).toBe(true);
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is ON');
+
+    mockApi.command.trigger('force-continue:autopilot');
+    expect(peekNextSessionAutopilotEnabled()).toBe(false);
+    expect(resolveLatestCommand('force-continue:autopilot')?.description).toContain('Autopilot is OFF');
+
+    expect(toastMessages).toEqual([
+      '[force-continue] Autopilot enabled for next session',
+      '[force-continue] Autopilot disabled for next session',
+    ]);
   });
 });

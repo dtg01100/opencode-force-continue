@@ -1,16 +1,17 @@
 import { spawn } from 'child_process';
-import { mkdtemp, rm, mkdir, writeFile, readFile, copyFile } from 'fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
+import { installLocalPlugin } from './install-plugin.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, '..', 'fixtures');
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
 /**
- * Spawns an isolated OpenCode instance for testing
- * Uses bash to redirect output to a file for reliable capture
+ * Spawns an isolated OpenCode instance for testing.
+ * The harness uses a clean temp HOME/XDG layout and does not copy user auth or config.
  * @param {Object} options
  * @param {string} options.mode - 'run' for non-interactive, 'tui' for interactive
  * @param {string[]} options.args - Additional arguments
@@ -20,7 +21,7 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 export async function spawnOpenCode(options = {}) {
   const { mode = 'run', args = [], timeout = 30000, env = {} } = options;
 
-  // Create isolated temp directory for test files
+  // Create isolated temp directory for test files.
   const tempDir = await mkdtemp(join(tmpdir(), 'opencode-test-'));
   const testProjectDest = join(tempDir, 'test-project');
   await mkdir(testProjectDest, { recursive: true });
@@ -32,67 +33,52 @@ export async function spawnOpenCode(options = {}) {
   );
   await writeFile(join(testProjectDest, 'sample.txt'), sampleContent);
 
-  // Create isolated config directory with minimal config
-  // opencode looks for config in ~/.config/opencode/
-  const configDir = join(tempDir, '.config', 'opencode');
-  await mkdir(configDir, { recursive: true });
-
-  // Create minimal config with just our plugin
-  const pluginFile = join(PROJECT_ROOT, 'force-continue.server.js');
-  const config = {
-    "$schema": "https://opencode.ai/config.json",
-    plugin: [`force-continue@file://${pluginFile}`]
+  const configDir = join(testProjectDest, '.opencode');
+  const processEnv = {
+    ...process.env,
+    ...env,
+    HOME: tempDir,
+    // Override all XDG dirs so opencode uses a fresh isolated database
+    // (without XDG_DATA_HOME override, opencode finds the running TUI server
+    // in the real ~/.local/share/opencode/opencode.db and hangs instead of
+    // starting its own server)
+    XDG_CONFIG_HOME: join(tempDir, '.config'),
+    XDG_DATA_HOME: join(tempDir, '.local', 'share'),
+    XDG_CACHE_HOME: join(tempDir, '.cache'),
+    OPENCODE_CONFIG_DIR: configDir,
+    NODE_ENV: 'test'
   };
-  await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
 
-  // Copy auth data to preserve credentials (needed for API access)
-  const realAuthDir = join(process.env.HOME, '.local', 'share', 'opencode');
-  const testAuthDir = join(tempDir, '.local', 'share', 'opencode');
-  await mkdir(testAuthDir, { recursive: true });
-  try {
-    await copyFile(
-      join(realAuthDir, 'auth.json'),
-      join(testAuthDir, 'auth.json')
-    );
-  } catch {
-    // Auth might not exist - opencode may still work with fallback providers
-  }
-
-  // Output file to capture stdout
-  const outputFile = join(tempDir, 'output.txt');
-  const stderrFile = join(tempDir, 'stderr.txt');
+  await installLocalPlugin(PROJECT_ROOT, testProjectDest, processEnv);
 
   // Build command based on mode
-  let commandStr;
+  let command, commandArgs;
   if (mode === 'tui') {
-    commandStr = `opencode ${args.join(' ')}`;
+    command = 'opencode';
+    commandArgs = args;
   } else {
-    commandStr = `opencode run --format json ${args.join(' ')}`;
+    command = 'opencode';
+    commandArgs = ['run', '--format', 'json', ...args];
   }
 
-  // Use bash to run command and redirect output
-  const bashCmd = `${commandStr} > '${outputFile}' 2> '${stderrFile}'`;
-
-  const proc = spawn('bash', ['-c', bashCmd], {
+  // Spawn directly with isolated environment
+  const proc = spawn(command, commandArgs, {
     cwd: testProjectDest,
-    env: {
-      ...process.env,
-      ...env,
-      HOME: tempDir,
-      // Override all XDG dirs so opencode uses a fresh isolated database
-      // (without XDG_DATA_HOME override, opencode finds the running TUI server
-      // in the real ~/.local/share/opencode/opencode.db and hangs instead of
-      // starting its own server)
-      XDG_CONFIG_HOME: join(tempDir, '.config'),
-      XDG_DATA_HOME: join(tempDir, '.local', 'share'),
-      XDG_CACHE_HOME: join(tempDir, '.cache'),
-      OPENCODE_CONFIG_DIR: configDir,
-      NODE_ENV: 'test'
-    },
-    stdio: ['pipe', 'pipe', 'pipe']
+    env: processEnv,
+    stdio: [mode === 'tui' ? 'pipe' : 'ignore', 'pipe', 'pipe']
   });
 
   let killed = false;
+  let stdout = '';
+  let stderr = '';
+
+  proc.stdout.on('data', (data) => {
+    stdout += data.toString();
+  });
+
+  proc.stderr.on('data', (data) => {
+    stderr += data.toString();
+  });
 
   const exitCode = new Promise((resolve) => {
     proc.on('close', (code) => {
@@ -116,21 +102,11 @@ export async function spawnOpenCode(options = {}) {
     process: proc,
     tempDir,
     testProjectDir: testProjectDest,
-    outputFile,
-    stderrFile,
     async getOutput() {
-      try {
-        return await readFile(outputFile, 'utf-8');
-      } catch {
-        return '';
-      }
+      return stdout;
     },
     async getStderr() {
-      try {
-        return await readFile(stderrFile, 'utf-8');
-      } catch {
-        return '';
-      }
+      return stderr;
     },
     async waitForExit() {
       clearTimeout(timeoutId);
@@ -159,7 +135,7 @@ export async function spawnOpenCode(options = {}) {
 export async function spawnWithMessage(message, options = {}) {
   const result = await spawnOpenCode({
     mode: 'run',
-    args: ['--', message],
+    args: [message],
     ...options
   });
   return result;
@@ -168,14 +144,32 @@ export async function spawnWithMessage(message, options = {}) {
 /**
  * Wait for specific output pattern with timeout
  */
-export async function waitForOutput(spawned, pattern, timeout = 15000) {
+async function waitForStream(read, pattern, timeout = 15000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const output = await spawned.getOutput();
+    const output = await read();
     if (pattern.test(output)) {
       return true;
     }
     await new Promise(r => setTimeout(r, 100));
   }
   throw new Error(`Timeout waiting for pattern: ${pattern}`);
+}
+
+export async function waitForOutput(spawned, pattern, timeout = 15000) {
+  return waitForStream(() => spawned.getOutput(), pattern, timeout);
+}
+
+export async function waitForStderr(spawned, pattern, timeout = 15000) {
+  return waitForStream(() => spawned.getStderr(), pattern, timeout);
+}
+
+export async function waitForAnyOutput(spawned, pattern, timeout = 15000) {
+  return waitForStream(async () => {
+    const [stdout, stderr] = await Promise.all([
+      spawned.getOutput(),
+      spawned.getStderr()
+    ]);
+    return stdout + stderr;
+  }, pattern, timeout);
 }

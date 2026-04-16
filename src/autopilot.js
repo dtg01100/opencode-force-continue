@@ -7,6 +7,13 @@ import { sessionState } from "./state.js";
 
 let autopilotState = { enabled: false, timestamp: null };
 
+function sharedStateScopeSuffix() {
+  return process.env.FORCE_CONTINUE_SHARED_STATE_SCOPE
+    || process.env.VITEST_WORKER_ID
+    || process.env.VITEST_POOL_ID
+    || null;
+}
+
 function autopilotFilePath() {
   // In test mode each worker gets its own file to prevent cross-worker contamination.
   // In production all processes share autopilot.json so TUI ↔ server state is visible.
@@ -16,11 +23,71 @@ function autopilotFilePath() {
   return join(process.cwd(), ".opencode", "force-continue", filename);
 }
 
+function sessionAutopilotFilePath() {
+  const suffix = sharedStateScopeSuffix();
+  const filename = suffix
+    ? `autopilot-sessions.${suffix}.json`
+    : "autopilot-sessions.json";
+  return join(process.cwd(), ".opencode", "force-continue", filename);
+}
+
+function readSessionAutopilotOverrides() {
+  try {
+    const filePath = sessionAutopilotFilePath();
+    if (!existsSync(filePath)) return {};
+    const parsed = JSON.parse(readFileSync(filePath, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, value]) => typeof value === "boolean")
+    );
+  } catch (e) {
+    console.warn(`[force-continue] readSessionAutopilotOverrides: failed to read session overrides — ${e?.message}`);
+    return {};
+  }
+}
+
+function writeSessionAutopilotOverrides(overrides) {
+  try {
+    const filePath = sessionAutopilotFilePath();
+    mkdirSync(join(process.cwd(), ".opencode", "force-continue"), { recursive: true });
+
+    if (!overrides || Object.keys(overrides).length === 0) {
+      try {
+        if (existsSync(filePath)) unlinkSync(filePath);
+      } catch {}
+      return;
+    }
+
+    const tmpPath = `${filePath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(overrides));
+    try { unlinkSync(filePath); } catch {}
+    renameSync(tmpPath, filePath);
+  } catch (e) {
+    console.error(`[force-continue] writeSessionAutopilotOverrides: failed to persist session overrides — ${e?.message}`);
+  }
+}
+
+export function clearSessionAutopilotOverride(sessionID) {
+  if (!sessionID) return;
+  const overrides = readSessionAutopilotOverrides();
+  if (Object.prototype.hasOwnProperty.call(overrides, sessionID)) {
+    delete overrides[sessionID];
+    writeSessionAutopilotOverrides(overrides);
+  }
+  const meta = sessionState.get(sessionID);
+  if (meta && Object.prototype.hasOwnProperty.call(meta, "autopilotEnabled")) {
+    delete meta.autopilotEnabled;
+    sessionState.set(sessionID, meta);
+  }
+}
+
 export function resetAutopilotState() {
   autopilotState = { enabled: false, timestamp: null };
   try {
     const p = autopilotFilePath();
     if (existsSync(p)) unlinkSync(p);
+    const sessionPath = sessionAutopilotFilePath();
+    if (existsSync(sessionPath)) unlinkSync(sessionPath);
   } catch (e) {
     console.debug(`[force-continue] resetAutopilotState: ${e?.message}`);
   }
@@ -112,6 +179,10 @@ export function getAutopilotEnabled(config, sessionID) {
         if ('autopilotEnabled' in meta) {
             return meta.autopilotEnabled;
         }
+        const overrides = readSessionAutopilotOverrides();
+        if (Object.prototype.hasOwnProperty.call(overrides, sessionID)) {
+            return overrides[sessionID];
+        }
     }
     // Fall back to global file store
     const stored = readAutopilotState();
@@ -136,9 +207,13 @@ export function setAutopilotEnabled(sessionID, enabled) {
         const meta = sessionState.get(sessionID) || {};
         meta.autopilotEnabled = enabled;
         sessionState.set(sessionID, meta);
+        const overrides = readSessionAutopilotOverrides();
+        overrides[sessionID] = Boolean(enabled);
+        writeSessionAutopilotOverrides(overrides);
         return;
     }
     writeAutopilotState({ enabled, timestamp: Date.now() });
+    writeSessionAutopilotOverrides({});
     for (const [sid, meta] of sessionState) {
         if (Object.prototype.hasOwnProperty.call(meta, "autopilotEnabled")) {
             delete meta.autopilotEnabled;

@@ -196,6 +196,21 @@ describe('ContinuePlugin', () => {
       expect(system[0]).toContain('completionSignal');
     });
 
+    it('should inject the full control-surface guidance message', async () => {
+      const { createContinuePlugin } = await import('../force-continue.server.js');
+      const createPlugin = createContinuePlugin();
+      const plugin = await createPlugin(mockCtx);
+
+      const system: string[] = [];
+      await plugin['experimental.chat.system.transform']({ sessionID: 'guided-session' }, { system });
+
+      expect(system).toHaveLength(1);
+      expect(system[0]).toContain('completionSignal');
+      expect(system[0]).toContain('requestGuidance');
+      expect(system[0]).toContain('statusReport');
+      expect(system[0]).toContain('pauseAutoContinue');
+    });
+
     it('should inject system message for any session', async () => {
       const { createContinuePlugin } = await import('../force-continue.server.js');
       const createPlugin = createContinuePlugin();

@@ -1,9 +1,9 @@
 import { spawn } from 'child_process';
-import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
+import { mkdtemp, rm, mkdir, readFile, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
-
+import { installLocalPlugin } from './install-plugin.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
@@ -18,36 +18,33 @@ export async function runTUI(options = {}) {
     commands = [] // Array of strings to type, e.g. ['/autopilot', '\n']
   } = options;
 
-  // Create isolated temp directory
-	const tempDir = await mkdtemp(join(tmpdir(), 'opencode-test-'));
-  const configDir = join(tempDir, '.opencode');
-  await mkdir(configDir, { recursive: true });
+  const tempDir = await mkdtemp(join(tmpdir(), 'opencode-test-'));
+  const projectDir = join(tempDir, 'test-project');
+  const configDir = join(projectDir, '.opencode');
+  await mkdir(projectDir, { recursive: true });
+  await writeFile(join(projectDir, 'sample.txt'), 'Hello World\n');
 
-  // Create config with local plugin loaded
-  const pluginPath = PROJECT_ROOT;
-  const config = {
-    "$schema": "https://opencode.ai/config.json",
-    plugin: [`force-continue@file://${pluginPath}`]
+  const processEnv = {
+    ...process.env,
+    ...env,
+    HOME: tempDir,
+    XDG_CONFIG_HOME: join(tempDir, '.config'),
+    XDG_DATA_HOME: join(tempDir, '.local', 'share'),
+    XDG_CACHE_HOME: join(tempDir, '.cache'),
+    OPENCODE_CONFIG_DIR: configDir,
+    TERM: 'xterm-256color',
+    COLUMNS: '80',
+    LINES: '24',
+    NODE_ENV: 'test'
   };
-  await writeFile(join(configDir, 'opencode.json'), JSON.stringify(config, null, 2));
+
+  await installLocalPlugin(PROJECT_ROOT, projectDir, processEnv);
 
   // Use script(1) to capture PTY output
   const logFile = join(tempDir, 'tui-output.log');
-  const proc = spawn('script', ['-q', '-O', logFile, 'opencode'], {
-    cwd: tempDir,
-    env: {
-      ...process.env,
-      ...env,
-      HOME: tempDir,
-      XDG_CONFIG_HOME: join(tempDir, '.config'),
-      XDG_DATA_HOME: join(tempDir, '.local', 'share'),
-      XDG_CACHE_HOME: join(tempDir, '.cache'),
-      OPENCODE_CONFIG_DIR: configDir,
-      TERM: 'xterm-256color',
-      COLUMNS: '80',
-      LINES: '24',
-      NODE_ENV: 'test'
-    },
+  const proc = spawn('script', ['-q', '-f', '-e', '-c', 'opencode', logFile], {
+    cwd: projectDir,
+    env: processEnv,
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
@@ -95,12 +92,21 @@ export async function runTUI(options = {}) {
   return {
     process: proc,
     tempDir,
+    projectDir,
+    configDir,
     logFile,
     async getOutput() {
       return stdout;
     },
     async getStderr() {
       return stderr;
+    },
+    async getLogOutput() {
+      try {
+        return await readFile(logFile, 'utf-8');
+      } catch {
+        return '';
+      }
     },
     async sendCommand(cmd) {
       proc.stdin.write(cmd);
@@ -132,11 +138,30 @@ export async function runTUI(options = {}) {
 export async function canStartTUI(timeout = 10000) {
 	const tui = await runTUI({ timeout });
 	try {
-		// Wait a bit for TUI to initialize
-		await new Promise(r => setTimeout(r, 2000));
-		const output = await tui.getOutput();
-		return { success: true, output };
+		const output = await waitForTerminalOutput(tui, /./, Math.min(timeout, 10000));
+    const stderr = await tui.getStderr();
+		return { success: output.length > 0, output, stderr, tempDir: tui.tempDir };
 	} finally {
-		tui.kill();
+		await tui.cleanup();
 	}
+}
+
+async function waitForTerminalOutput(tui, pattern, timeout = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const [output, logOutput] = await Promise.all([
+      tui.getOutput(),
+      tui.getLogOutput(),
+    ]);
+    const combinedOutput = `${output}\n${logOutput}`;
+    if (pattern.test(combinedOutput)) {
+      return combinedOutput;
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  throw new Error(`Timeout waiting for TUI output matching ${pattern}`);
+}
+
+export async function waitForTUIOutput(tui, pattern, timeout = 10000) {
+  return waitForTerminalOutput(tui, pattern, timeout);
 }

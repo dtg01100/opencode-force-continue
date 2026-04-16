@@ -1,6 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { spawnWithMessage, waitForOutput } from './harness/spawn-opencode.mjs';
-import { assertNoErrors, parseJsonLines } from './harness/assertions.mjs';
+import {
+  spawnWithMessage,
+} from './harness/spawn-opencode.mjs';
+import {
+  assertHealthCheckValid,
+  assertNoErrors,
+  parseJsonLines,
+} from './harness/assertions.mjs';
 
 describe('Full Integration Tests', () => {
   let spawned;
@@ -13,61 +19,66 @@ describe('Full Integration Tests', () => {
     }
   });
 
-  it('should complete a simple task end-to-end', async () => {
+  it('should complete a simple task end-to-end on a clean install', async () => {
     spawned = await spawnWithMessage(
       'Read sample.txt and tell me what it says',
-      { timeout: 55000 }
+      { timeout: 20000 }
     );
 
-    // Wait for any JSON output (up to 50s)
-    await waitForOutput(spawned, /\{/, 50000);
+    await spawned.waitForExit();
 
     const output = await spawned.getOutput();
     const stderr = await spawned.getStderr();
+    const jsonObjects = parseJsonLines(output);
+    const readCall = jsonObjects.find((entry) => entry.type === 'tool_use' && entry.part?.tool === 'read');
 
     assertNoErrors(stderr);
-    assertNoErrors(output);
+    expect(readCall).toBeDefined();
+    expect(readCall.part.state.output).toContain('Hello World');
+  }, 25000);
 
-    // Should have JSON output with step events
-    const jsonObjs = parseJsonLines(output);
-    expect(jsonObjs.length).toBeGreaterThan(0);
-  }, 60000);
-
-  it('should run with custom environment variables', async () => {
+  it('should surface env overrides through healthCheck full detail', async () => {
     spawned = await spawnWithMessage(
-      'Just acknowledge',
+      'Call the healthCheck tool with detail=full and report the JSON result',
       {
-        timeout: 55000,
+        timeout: 25000,
         env: {
-          FORCE_CONTINUE_COOLDOWN_MS: '1000',
           FORCE_CONTINUE_MAX_CONTINUATIONS: '2'
         }
       }
     );
 
-    // Wait for any output at all
-    await waitForOutput(spawned, /.+/, 50000).catch(() => {});
-
-    const stderr = await spawned.getStderr();
-    assertNoErrors(stderr);
-  }, 60000);
-
-  it('should process healthCheck tool call', async () => {
-    spawned = await spawnWithMessage(
-      'Call the healthCheck tool',
-      { timeout: 55000 }
-    );
-
-    // Wait for JSON output
-    await waitForOutput(spawned, /\{/, 50000);
+    await spawned.waitForExit();
 
     const output = await spawned.getOutput();
     const stderr = await spawned.getStderr();
+    const jsonObjects = parseJsonLines(output);
+    const toolCall = jsonObjects.find((entry) => entry.type === 'tool_use' && entry.part?.tool === 'healthCheck');
+    const fullResult = toolCall?.part?.state?.output;
+    const parsed = JSON.parse(fullResult);
 
     assertNoErrors(stderr);
+    assertHealthCheckValid(parsed);
+    expect(parsed.config.maxContinuations).toBe(2);
+  }, 30000);
 
-    // Should have JSON output
-    const jsonObjs = parseJsonLines(output);
-    expect(jsonObjs.length).toBeGreaterThan(0);
-  }, 60000);
+  it('should return a healthCheck summary and final answer text', async () => {
+    spawned = await spawnWithMessage(
+      'Call the healthCheck tool with detail=summary and report the result',
+      { timeout: 30000 }
+    );
+
+    await spawned.waitForExit();
+
+    const output = await spawned.getOutput();
+    const stderr = await spawned.getStderr();
+    const jsonObjects = parseJsonLines(output);
+    const toolCall = jsonObjects.find((entry) => entry.type === 'tool_use' && entry.part?.tool === 'healthCheck');
+    const summary = toolCall?.part?.state?.output;
+
+    assertNoErrors(stderr);
+    expect(toolCall).toBeDefined();
+    assertHealthCheckValid(summary);
+    expect(summary).toContain('Plugin health:');
+  }, 35000);
 });

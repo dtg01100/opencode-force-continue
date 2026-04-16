@@ -72,6 +72,9 @@ Remove the plugin from the `plugin` array in both `opencode.json` and `tui.json`
 
 The plugin is intentionally simple and unobtrusive: once installed it runs automatically. In the TUI, you can also search for **Toggle Autopilot** or use the slash command **/autopilot** after the automatic config sync has completed.
 
+- From the TUI home screen, **Toggle Autopilot** enables or disables autopilot for the **next session**, and that choice is handed off to the server when the next session starts.
+- From inside an active session, **Toggle Autopilot** updates autopilot for the **current session**, and the server resolves the same session-scoped value.
+
 Behavior summary:
 
 1. Injects a system message asking the model to call `completionSignal` when a task is complete, treating it as a hard termination.
@@ -319,9 +322,12 @@ Run the test suite and install dependencies before modifying code:
 ```bash
 npm install
 npm run test:run
+npm run test:integration
 ```
 
 There are unit tests under `__tests__` that cover the core auto-continue logic, configuration, tools, hooks, and persistence. Keep changes small and focused: the plugin prefers minimal, auditable behavior rather than complex heuristics.
+
+The integration harness under `tests/integration/` starts OpenCode with a clean temporary HOME/XDG layout and a local file-based plugin install. It does not reuse the developer's existing auth or project config, and the integration suite runs serially because the spawned model-backed sessions contend when executed in parallel.
 
 ## Requirements
 

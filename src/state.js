@@ -1,7 +1,58 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import { join } from "path";
 import { metrics } from "./metrics.js";
 
 export const sessionState = new Map();
 let nextSessionAutopilotEnabled = null;
+
+function sharedStateScopeSuffix() {
+    return process.env.FORCE_CONTINUE_SHARED_STATE_SCOPE
+        || process.env.VITEST_WORKER_ID
+        || process.env.VITEST_POOL_ID
+        || null;
+}
+
+function nextSessionAutopilotFilePath() {
+    const suffix = sharedStateScopeSuffix();
+    const filename = suffix
+        ? `next-session-autopilot.${suffix}.json`
+        : "next-session-autopilot.json";
+    return join(process.cwd(), ".opencode", "force-continue", filename);
+}
+
+function readNextSessionAutopilotFlag() {
+    try {
+        const filePath = nextSessionAutopilotFilePath();
+        if (!existsSync(filePath)) return null;
+        const parsed = JSON.parse(readFileSync(filePath, "utf-8"));
+        return typeof parsed?.enabled === "boolean" ? parsed.enabled : null;
+    } catch (e) {
+        console.warn(`[force-continue] readNextSessionAutopilotFlag: failed to read next-session state — ${e?.message}`);
+        return null;
+    }
+}
+
+function writeNextSessionAutopilotFlag(enabled) {
+    try {
+        const filePath = nextSessionAutopilotFilePath();
+        mkdirSync(join(process.cwd(), ".opencode", "force-continue"), { recursive: true });
+        const tmpPath = `${filePath}.tmp`;
+        writeFileSync(tmpPath, JSON.stringify({ enabled: Boolean(enabled) }));
+        try { unlinkSync(filePath); } catch {}
+        renameSync(tmpPath, filePath);
+    } catch (e) {
+        console.error(`[force-continue] writeNextSessionAutopilotFlag: failed to persist next-session state — ${e?.message}`);
+    }
+}
+
+function deleteNextSessionAutopilotFlag() {
+    try {
+        const filePath = nextSessionAutopilotFilePath();
+        if (existsSync(filePath)) unlinkSync(filePath);
+    } catch (e) {
+        console.warn(`[force-continue] deleteNextSessionAutopilotFlag: failed to clear next-session state — ${e?.message}`);
+    }
+}
 
 let sessionTtlMs = 24 * 60 * 60 * 1000; // 24 hours
 let cleanupInterval = null;
@@ -186,22 +237,30 @@ export function setAutopilotEnabled(sessionID, enabled) {
 
 export function setNextSessionAutopilotEnabled(enabled) {
     nextSessionAutopilotEnabled = Boolean(enabled);
+    writeNextSessionAutopilotFlag(nextSessionAutopilotEnabled);
 }
 
 export function peekNextSessionAutopilotEnabled() {
+    if (nextSessionAutopilotEnabled !== null) {
+        return nextSessionAutopilotEnabled;
+    }
+    nextSessionAutopilotEnabled = readNextSessionAutopilotFlag();
     return nextSessionAutopilotEnabled;
 }
 
 export function clearNextSessionAutopilotEnabled() {
     nextSessionAutopilotEnabled = null;
+    deleteNextSessionAutopilotFlag();
 }
 
 export function consumeNextSessionAutopilotEnabled(sessionID) {
-    if (nextSessionAutopilotEnabled === null) return false;
+    const enabled = peekNextSessionAutopilotEnabled();
+    if (enabled === null) return false;
     const meta = sessionState.get(sessionID) || {};
-    meta.autopilotEnabled = nextSessionAutopilotEnabled;
+    meta.autopilotEnabled = enabled;
     sessionState.set(sessionID, meta);
     nextSessionAutopilotEnabled = null;
+    deleteNextSessionAutopilotFlag();
     return true;
 }
 

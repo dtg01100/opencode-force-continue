@@ -5,5 +5,6 @@ export default defineConfig({
     include: ['tests/integration/**/*.test.mjs'],
     testTimeout: 60000,
     hookTimeout: 30000,
+    fileParallelism: false,
   }
 });

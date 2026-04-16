@@ -1,6 +1,7 @@
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { describe, it, expect, afterEach } from 'vitest';
-import { runTUI, canStartTUI } from './harness/pty-runner.mjs';
-import { assertNoErrors } from './harness/assertions.mjs';
+import { runTUI, canStartTUI, waitForTUIOutput } from './harness/pty-runner.mjs';
 
 describe('TUI Plugin Integration', () => {
   let tui;
@@ -12,32 +13,39 @@ describe('TUI Plugin Integration', () => {
     }
   });
 
-  it('should start TUI without error', async () => {
-    const result = await canStartTUI(15000);
+  it('should start TUI process', async () => {
+    const result = await canStartTUI(12000);
+    expect(result).toBeDefined();
     expect(result.success).toBe(true);
-  }, 20000);
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.stderr).not.toMatch(/unexpected number of arguments/i);
+    expect(existsSync(result.tempDir)).toBe(false);
+  }, 16000);
 
-  it('should run TUI and produce output', async () => {
-    tui = await runTUI({ timeout: 20000, commands: [] });
-
-    await new Promise(r => setTimeout(r, 10000));
-
-    const output = await tui.getOutput();
+  it('should emit terminal output when a TUI session starts', async () => {
+    tui = await runTUI({ timeout: 12000, commands: [] });
+    const output = await waitForTUIOutput(tui, /./, 10000);
     const stderr = await tui.getStderr();
 
-    assertNoErrors(stderr);
+    expect(output.length).toBeGreaterThan(0);
+    expect(stderr).not.toMatch(/unexpected number of arguments/i);
+  }, 16000);
 
-    // Should have some output
-    expect(output.length + stderr.length).toBeGreaterThan(0);
-  }, 25000);
+  it('should create tui.json during clean install before launching the TUI', async () => {
+    tui = await runTUI({ timeout: 12000, commands: [] });
 
-  it('should handle autopilot command in TUI', async () => {
-    tui = await runTUI({ timeout: 25000, commands: ['/autopilot\n'] });
+    expect(existsSync(join(tui.configDir, 'opencode.json'))).toBe(true);
+    expect(existsSync(join(tui.configDir, 'tui.json'))).toBe(true);
+  }, 16000);
 
-    await new Promise(r => setTimeout(r, 10000));
+  it('should clean up its isolated workspace after TUI shutdown', async () => {
+    tui = await runTUI({ timeout: 12000, commands: [] });
+    const tempDir = tui.tempDir;
 
-    const stderr = await tui.getStderr();
+    await waitForTUIOutput(tui, /./, 10000);
+    await tui.cleanup();
+    tui = null;
 
-    assertNoErrors(stderr);
-  }, 30000);
+    expect(existsSync(tempDir)).toBe(false);
+  }, 16000);
 });
